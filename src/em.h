@@ -254,4 +254,51 @@ static const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+// نافذة إدخال مفتاح الطوارئ: تظهر عند أول دخول أو عند فقدان /app/index.html
+static const char login_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 - دخول الطوارئ</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 15px; }
+        .card { background: #16161e; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 25px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        h2 { font-size: 16px; margin-bottom: 6px; }
+        p { font-size: 12px; color: #94a3b8; margin-bottom: 18px; line-height: 1.6; }
+        input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: #000; color: #10b981; font-size: 16px; text-align: center; letter-spacing: 3px; outline: none; margin-bottom: 12px; }
+        input:focus { border-color: #4f46e5; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: bold; font-size: 14px; cursor: pointer; }
+        button:disabled { opacity: 0.5; }
+        #msg { min-height: 18px; margin-top: 12px; font-size: 12px; color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>نافذة الطوارئ</h2>
+        <p>أدخل المفتاح السري للدخول إلى مدير الملفات.</p>
+        <input id="k" type="password" placeholder="••••" autocomplete="off" autofocus>
+        <button id="b" onclick="go()">دخول</button>
+        <div id="msg"></div>
+    </div>
+    <script>
+        const k = document.getElementById('k'), b = document.getElementById('b'), m = document.getElementById('msg');
+        k.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        async function go() {
+            if (!k.value) return;
+            b.disabled = true; m.innerText = '';
+            try {
+                const r = await fetch('/em/check?pass=' + encodeURIComponent(k.value));
+                if (r.ok) { location.href = '/em'; return; }
+                m.innerText = r.status === 429 ? 'محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة' : 'المفتاح غير صحيح';
+            } catch (e) { m.innerText = 'تعذر الاتصال بالجهاز'; }
+            b.disabled = false; k.value = ''; k.focus();
+        }
+    </script>
+</body>
+</html>
+)rawliteral";
+
 #endif
