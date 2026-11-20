@@ -28,6 +28,19 @@
 | نظام الملفات | LittleFS |
 | المكتبات | ArduinoJson ^7، ESPAsyncWebServer 3.6.0، AsyncTCP 3.3.2 |
 
+## الواجهة (Svelte)
+
+الواجهة مكتوبة بـ Svelte + Vite في المجلد `ui/`، وتُبنى إلى ملف واحد مضغوط `data/app/index.html.gz` (بضع عشرات من الكيلوبايت).
+
+```
+cd ui
+npm install
+npm run build        # الناتج: data/app/index.html.gz
+pio run -t uploadfs  # من جذر المشروع: رفع الواجهة إلى LittleFS
+```
+
+للتطوير مع اللوحة مباشرة: `ESP_IP=192.168.4.1 npm run dev`. أما في GitHub Actions فتُبنى الواجهة تلقائيًا ويُرفق `littlefs.bin` مع كل إصدار.
+
 ## البنية
 
 ```
@@ -35,6 +48,7 @@ platformio.ini
 src/
   main.cpp     # الخادم والمصادقة والإعدادات والواي فاي
   em.h         # صفحة مدير الملفات (HTML مضمّن)
+ui/            # مصدر الواجهة (Svelte)
 assets/
   banner.svg
 ```
@@ -42,7 +56,7 @@ assets/
 ## التشغيل
 
 1. افتح المشروع في PlatformIO ثم نفّذ **Build** و**Upload**.
-2. ضع ملفات واجهتك في المجلد `data/app/` (يجب أن يوجد `index.html`) ثم نفّذ **Upload Filesystem Image**.
+2. ابنِ الواجهة (انظر قسم الواجهة) ثم نفّذ **Upload Filesystem Image**.
 3. اتصل بشبكة الـ AP الافتراضية، واسمها `ESP32_AP` وكلمة المرور `12345678`.
 4. افتح `http://192.168.4.1/` للواجهة، أو `http://192.168.4.1/em?pass=<مفتاح الطوارئ>` لمدير الملفات.
 
