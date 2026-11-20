@@ -291,7 +291,27 @@ void EmSetupAPI() {
             AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html);
             refreshSessionEm(response);
             request->send(response);
-        } else { request->send(404); }
+        } else {
+            // غير مصرّح: اعرض نافذة إدخال المفتاح
+            request->send(request->beginResponse_P(401, "text/html", login_html));
+        }
+    });
+
+    // التحقق من مفتاح الطوارئ (مع قفل مؤقت بعد 5 محاولات خاطئة)
+    server.on("/em/check", HTTP_GET, [](AsyncWebServerRequest *request) {
+        static uint8_t fails = 0;
+        static uint32_t lockUntil = 0;
+        uint32_t now = millis();
+        if (lockUntil && (int32_t)(now - lockUntil) < 0) { request->send(429); return; }
+        if (isAuthorizedEm(request) && request->hasParam("pass")) {
+            fails = 0; lockUntil = 0;
+            AsyncWebServerResponse *response = request->beginResponse(200);
+            refreshSessionEm(response);
+            request->send(response);
+            return;
+        }
+        if (++fails >= 5) { fails = 0; lockUntil = now + 60000; }
+        request->send(401);
     });
 
     server.on("/api/list", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -575,6 +595,8 @@ void setupServerWeb() {
   // CORS Options
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);
+    // فُقد /app/index.html أو أول تشغيل: اعرض نافذة مفتاح الطوارئ بدل 404
+    else if (request->method() == HTTP_GET && request->url() == "/") request->send(request->beginResponse_P(200, "text/html", login_html));
     else request->send(404);
   });
 }
