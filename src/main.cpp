@@ -29,8 +29,18 @@ char Admin_Token[33] = "";
 char User_Token[33] = "";
 // --- WiFi is Working 
 bool wifiIsWorking = false;
+volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
 
 AsyncWebServer server(80);
+
+// --- Token Validation ---
+// الرمز الفارغ مرفوض دائماً (قبل أول تسجيل دخول يكون الرمز فارغاً)
+static bool tokenMatches(AsyncWebServerRequest *request, const char* stored) {
+    if (stored[0] == '\0' || !request->hasHeader("User_Token")) return false;
+    return strcmp(stored, request->getHeader("User_Token")->value().c_str()) == 0;
+}
+static bool isAdminToken(AsyncWebServerRequest *request) { return tokenMatches(request, Admin_Token); }
+static bool isAnyToken(AsyncWebServerRequest *request)   { return tokenMatches(request, Admin_Token) || tokenMatches(request, User_Token); }
 
 // --- Hardware Usage Functions ---
 
@@ -223,7 +233,7 @@ bool isAuthorizedEm(AsyncWebServerRequest *request) {
 }
 
 bool isAuthorized(AsyncWebServerRequest *request) {
-    if (request->hasHeader("User_Token") && String(Admin_Token) == request->getHeader("User_Token")->value()) return true;
+    if (isAdminToken(request)) return true;
     if (request->hasHeader("Cookie")) {
         String cookie = request->header("Cookie");
         if (cookie.indexOf("session_key=" + String(access_key)) != -1) return true;
@@ -411,9 +421,9 @@ void setupServerWeb() {
 
   // --- Settings SAVE APIs ---
   auto saveHandler = [](AsyncWebServerRequest *request, uint8_t *data, size_t len, int type) {
-    if (request->hasHeader("User_Token") && String(Admin_Token) == request->getHeader("User_Token")->value()) {
+    if (isAdminToken(request)) {
       JsonDocument doc;
-      deserializeJson(doc, data, len);
+      if (deserializeJson(doc, data, len)) { request->send(400); return; }
       if (type == 0) { // WiFi
         updateOrCreateJson("/settings.json", "0_Obj.wifi.mode", doc["mode"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ssid", doc["ssid"]);
@@ -492,7 +502,8 @@ void setupServerWeb() {
   });
   
   server.on("/settings/get_wifi", HTTP_GET, [](AsyncWebServerRequest *request){
-    char m[33], s[33], p[33], ap_s[33], ap_p[33], res[128];
+    if (!isAdminToken(request)) { request->send(401); return; }
+    char m[33] = "", s[33] = "", p[33] = "", ap_s[33] = "", ap_p[33] = "", res[256];
     getJson("/settings.json", "0_Obj.wifi.mode", m, 33);
     getJson("/settings.json", "0_Obj.wifi.ssid", s, 33);
     getJson("/settings.json", "0_Obj.wifi.pass", p, 33);
@@ -503,7 +514,8 @@ void setupServerWeb() {
   });
 
   server.on("/settings/get_comm", HTTP_GET, [](AsyncWebServerRequest *request){
-    char l[33], h[33], res[128];
+    if (!isAnyToken(request)) { request->send(401); return; }
+    char l[33] = "", h[33] = "", res[128];
     getJson("/settings.json", "0_Obj.localhost", l, 33);
     getJson("/settings.json", "0_Obj.internethost", h, 33);
     snprintf(res, sizeof(res), "{\"localhost\":\"%s\",\"host\":\"%s\"}", l, h);
@@ -511,15 +523,16 @@ void setupServerWeb() {
   });
 
   server.on("/settings/get_pin", HTTP_GET, [](AsyncWebServerRequest *request){
-    char p[33], res[64];
+    if (!isAnyToken(request)) { request->send(401); return; }
+    char p[33] = "", res[64];
     getJson("/settings.json", "0_Obj.pinreset", p, 33);
     snprintf(res, sizeof(res), "{\"pin\":\"%s\"}", p);
     request->send(200, "application/json", res);
   });
 
   server.on("/settings/get_pass", HTTP_GET, [](AsyncWebServerRequest *request){
-    if (request->hasHeader("User_Token") && String(Admin_Token) == request->getHeader("User_Token")->value()) {
-        char ap[33], up[33], res[128];
+    if (isAdminToken(request)) {
+        char ap[33] = "", up[33] = "", res[128];
         getJson("/users.json", "0_Obj.password", ap, 33);
         getJson("/users.json", "1_Obj.password", up, 33);
         snprintf(res, sizeof(res), "{\"ap\":\"%s\",\"up\":\"%s\"}", ap, up);
@@ -528,6 +541,7 @@ void setupServerWeb() {
   });
 
   server.on("/hdusage", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!isAnyToken(request)) { request->send(401); return; }
     char r[16], s[16], res[128];
     RamUsage(r, 16); StorageUsage(s, 16);
     snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\"}", r, s);
