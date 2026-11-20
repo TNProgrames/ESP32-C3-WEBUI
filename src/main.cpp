@@ -153,31 +153,36 @@ bool getJson(const char* filePath, const char* path, char* outValue, size_t outV
 void applyWiFi() {
   wifiIsWorking = true;
   Serial.println("Reconfiguring WiFi...");
-  WiFi.disconnect(true);
+  WiFi.disconnect();
   WiFi.softAPdisconnect(true);
   delay(500);
-  
-    getJson("/settings.json", "0_Obj.wifi.mode", wifimode, sizeof(wifimode));
-    getJson("/settings.json", "0_Obj.wifi.ssid", wifissid, sizeof(wifissid));
-    getJson("/settings.json", "0_Obj.wifi.pass", wifipass, sizeof(wifipass));
-    getJson("/settings.json", "0_Obj.wifi.ap_ssid", apwifissid, sizeof(apwifissid));
-    getJson("/settings.json", "0_Obj.wifi.ap_pass", apwifipass, sizeof(apwifipass));
 
-  if (strcmp(wifimode, "AP") == 0 || strcmp(wifimode, "AP_STA") == 0 ) {
+  getJson("/settings.json", "0_Obj.wifi.mode", wifimode, sizeof(wifimode));
+  getJson("/settings.json", "0_Obj.wifi.ssid", wifissid, sizeof(wifissid));
+  getJson("/settings.json", "0_Obj.wifi.pass", wifipass, sizeof(wifipass));
+  getJson("/settings.json", "0_Obj.wifi.ap_ssid", apwifissid, sizeof(apwifissid));
+  getJson("/settings.json", "0_Obj.wifi.ap_pass", apwifipass, sizeof(apwifipass));
+
+  bool wantSta = (strcmp(wifimode, "STA") == 0 || strcmp(wifimode, "AP_STA") == 0);
+  bool wantAp  = !wantSta || strcmp(wifimode, "AP_STA") == 0; // أي قيمة غير معروفة = AP
+
+  // اضبط الوضع أولاً ثم شغّل الواجهات
+  WiFi.mode(wantSta && wantAp ? WIFI_AP_STA : (wantSta ? WIFI_STA : WIFI_AP));
+
+  if (wantAp) {
     WiFi.softAP(apwifissid, apwifipass);
   }
-  
-  if (strcmp(wifimode, "STA") == 0 || strcmp(wifimode, "AP_STA") == 0 ) {
+
+  if (wantSta) {
     WiFi.begin(wifissid, wifipass);
-    WiFi.mode(strcmp(wifimode, "STA") == 0 ? WIFI_STA : WIFI_AP_STA);
-    
+
     // فحص النجاح لمدة 10 ثواني
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
       delay(500); Serial.print("."); attempts++;
     }
 
-    if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED && !wantAp) {
       Serial.println("STA Failed! Reverting to AP Safety Mode");
       WiFi.mode(WIFI_AP);
       WiFi.softAP("RECOVERY_MODE", "12345678");
@@ -430,11 +435,7 @@ void setupServerWeb() {
         updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", doc["ap_ssid"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"]);
-        if(wifiIsWorking) {
-        request->send(202);
-        } else {
-        applyWiFi();
-        }
+        wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
       } else if (type == 1) { // Comm
         updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
         updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"]);
@@ -478,10 +479,11 @@ void setupServerWeb() {
     if(wifiIsWorking) {
        request->send(401);
     } else {
-    wifiIsWorking = true;
     int n = WiFi.scanComplete();
-    if(n == -2) {
+    if(n == WIFI_SCAN_FAILED) {        // لم يبدأ مسح بعد
        WiFi.scanNetworks(true);
+       request->send(202);
+    } else if(n == WIFI_SCAN_RUNNING) { // المسح جارٍ، لا تلغِه
        request->send(202);
     } else {
        JsonDocument doc;
@@ -497,7 +499,6 @@ void setupServerWeb() {
        String output; serializeJson(doc, output);
        request->send(202, "application/json", output);
     }
-    wifiIsWorking = false;
     }
   });
   
@@ -564,4 +565,11 @@ void setup() {
   server.begin();
 }
 
-void loop() {}
+void loop() {
+  if (wifiApplyPending) {
+    wifiApplyPending = false;
+    delay(300); // أمهل الرد 200 وقتاً ليصل قبل إعادة ضبط الواي فاي
+    applyWiFi();
+  }
+  delay(10);
+}
