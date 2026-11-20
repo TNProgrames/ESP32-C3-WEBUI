@@ -102,10 +102,10 @@ bool updateOrCreateJson(const char* filePath, const char* path, const char* newV
       current = current.as<JsonArray>()[idx];
     } else if (token[strlen(token) - 1] == '-') {
       token[strlen(token) - 1] = 0;
-      if (!current[token].is<JsonArray>()) current[token] = JsonArray();
+      if (!current[token].is<JsonArray>()) current[token].to<JsonArray>();
       current = current[token];
     } else {
-      if (!current[token].is<JsonObject>()) current[token] = JsonObject();
+      if (!current[token].is<JsonObject>()) current[token].to<JsonObject>();
       current = current[token];
     }
     token = strtok(NULL, ".");
@@ -272,6 +272,17 @@ bool deleteRecursive(String path) {
     return LittleFS.rmdir(path);
 }
 
+// --- Path / Param Helpers ---
+// المسار يجب أن يبدأ بـ / ولا يحتوي على ..
+static bool validPath(const String& p) {
+    return p.length() > 0 && p[0] == '/' && p.indexOf("..") < 0;
+}
+static bool getPathParam(AsyncWebServerRequest *request, const char* name, String& out) {
+    if (!request->hasParam(name)) return false;
+    out = request->getParam(name)->value();
+    return validPath(out);
+}
+
 // --- Emergency APIs Setup ---
 
 void EmSetupAPI() {
@@ -285,12 +296,14 @@ void EmSetupAPI() {
 
     server.on("/api/list", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
-        String path = request->hasParam("path") ? request->getParam("path")->value() : "/";
+        String path = "/";
+        if (request->hasParam("path") && !getPathParam(request, "path", path)) { request->send(400); return; }
         File root = LittleFS.open(path);
+        if (!root || !root.isDirectory()) { request->send(400); return; }
         JsonDocument doc;
         doc["total"] = LittleFS.totalBytes();
         doc["used"] = LittleFS.usedBytes();
-        JsonArray files = doc.createNestedArray("files");
+        JsonArray files = doc["files"].to<JsonArray>();
         File file = root.openNextFile();
         while (file) {
             JsonObject f = files.add<JsonObject>();
@@ -321,7 +334,8 @@ void EmSetupAPI() {
 
     server.on("/api/download", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
-        String path = request->getParam("path")->value();
+        String path;
+        if (!getPathParam(request, "path", path) || !LittleFS.exists(path)) { request->send(400); return; }
         AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "application/octet-stream");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         refreshSession(response);
@@ -330,7 +344,9 @@ void EmSetupAPI() {
     
     server.on("/api/mkdir", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
-        LittleFS.mkdir(request->getParam("path")->value());
+        String path;
+        if (!getPathParam(request, "path", path)) { request->send(400); return; }
+        LittleFS.mkdir(path);
         AsyncWebServerResponse *response = request->beginResponse(200);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         refreshSession(response);
@@ -339,7 +355,9 @@ void EmSetupAPI() {
     
     server.on("/api/read", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, request->getParam("path")->value(), "text/plain");
+        String path;
+        if (!getPathParam(request, "path", path) || !LittleFS.exists(path)) { request->send(400); return; }
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "text/plain");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         refreshSession(response);
         request->send(response);
@@ -347,7 +365,10 @@ void EmSetupAPI() {
 
     server.on("/api/save", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
-        File f = LittleFS.open(request->getParam("path")->value(), "w");
+        String path;
+        if (!getPathParam(request, "path", path) || !request->hasParam("content", true)) { request->send(400); return; }
+        File f = LittleFS.open(path, "w");
+        if (!f) { request->send(500); return; }
         f.print(request->getParam("content", true)->value());
         f.close();
         AsyncWebServerResponse *response = request->beginResponse(200);
@@ -358,7 +379,9 @@ void EmSetupAPI() {
 
     server.on("/api/delete", HTTP_DELETE, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
-        bool success = deleteRecursive(request->getParam("path")->value());
+        String path;
+        if (!getPathParam(request, "path", path) || path == "/") { request->send(400); return; }
+        bool success = deleteRecursive(path);
         AsyncWebServerResponse *response = request->beginResponse(success ? 200 : 500);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         refreshSession(response);
@@ -367,7 +390,9 @@ void EmSetupAPI() {
     
     server.on("/api/rename", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
-        LittleFS.rename(request->getParam("old")->value(), request->getParam("new")->value());
+        String oldPath, newPath;
+        if (!getPathParam(request, "old", oldPath) || !getPathParam(request, "new", newPath)) { request->send(400); return; }
+        LittleFS.rename(oldPath, newPath);
         AsyncWebServerResponse *response = request->beginResponse(200);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         refreshSession(response);
@@ -397,21 +422,19 @@ void setupServerWeb() {
   server.on("/login", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     JsonDocument doc; 
-    deserializeJson(doc, data, len);
+    if (deserializeJson(doc, data, len)) { request->send(400); return; }
     const char* u = doc["username"];
     const char* p = doc["password"];
-    
-    char userName[33], passWord[33], token[33];
-    int userIdx = (u && strcmp(u, "admin") == 0) ? 0 : ((u && strcmp(u, "user") == 0) ? 1 : -1);
+    if (!u || !p) { request->send(400); return; }
+
+    char passWord[33] = "", token[33];
+    int userIdx = (strcmp(u, "admin") == 0) ? 0 : ((strcmp(u, "user") == 0) ? 1 : -1);
 
     if (userIdx != -1) {
-      char pathU[32], pathP[32];
-      snprintf(pathU, sizeof(pathU), "%d_Obj.username", userIdx);
+      char pathP[32];
       snprintf(pathP, sizeof(pathP), "%d_Obj.password", userIdx);
-      getJson("/users.json", pathU, userName, sizeof(userName));
-      getJson("/users.json", pathP, passWord, sizeof(passWord));
 
-      if (strcmp(p, passWord) == 0) {
+      if (getJson("/users.json", pathP, passWord, sizeof(passWord)) && strcmp(p, passWord) == 0) {
         generateToken(token, sizeof(token));
         if (userIdx == 0) strlcpy(Admin_Token, token, sizeof(Admin_Token));
         else strlcpy(User_Token, token, sizeof(User_Token));
