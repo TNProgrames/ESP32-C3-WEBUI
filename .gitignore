@@ -1,2 +1,5 @@
 .pio/
 .vscode/
+data/app/
+node_modules/
+ui/node_modules/
