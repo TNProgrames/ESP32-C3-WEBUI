@@ -1,0 +1,62 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: pio-${{ hashFiles('platformio.ini') }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        run: pio run
+
+      - name: Build LittleFS image (only if data/ exists)
+        run: |
+          if [ -d data ]; then pio run -t buildfs; fi
+
+      - name: Collect artifacts
+        run: |
+          VER="${GITHUB_REF_NAME//\//-}"
+          B=.pio/build/esp32-c3-devkitm-1
+          mkdir -p dist
+          cp $B/firmware.bin   dist/firmware-$VER.bin
+          cp $B/bootloader.bin dist/bootloader-$VER.bin
+          cp $B/partitions.bin dist/partitions-$VER.bin
+          [ -f $B/littlefs.bin ] && cp $B/littlefs.bin dist/littlefs-$VER.bin || true
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/*
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
