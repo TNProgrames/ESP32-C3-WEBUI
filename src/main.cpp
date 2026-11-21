@@ -36,7 +36,7 @@ volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل l
 char otaError[64] = "";
 bool otaStarted = false;
 bool otaFsUnmounted = false;
-volatile bool otaRestartPending = false;
+volatile bool restartPending = false; // إعادة تشغيل مؤجلة (OTA / استعادة النسخة الاحتياطية)
 
 AsyncWebServer server(80);
 
@@ -618,7 +618,7 @@ void setupServerWeb() {
     }
     if (!started) { request->send(400, "application/json", "{\"error\":\"no file\"}"); return; }
     request->send(200, "application/json", "{\"ok\":true}");
-    otaRestartPending = true;
+    restartPending = true;
   }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!index) {
       otaError[0] = 0;
@@ -642,6 +642,53 @@ void setupServerWeb() {
     if (final && !Update.end(true)) {
       strlcpy(otaError, Update.errorString(), sizeof(otaError));
     }
+  });
+
+  // --- نسخة احتياطية (admin فقط): تنزيل واستعادة settings.json و users.json ---
+  server.on("/settings/backup", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String s = "[]", u = "[]";
+    File f = LittleFS.open("/settings.json", "r");
+    if (f) { s = f.readString(); f.close(); }
+    f = LittleFS.open("/users.json", "r");
+    if (f) { u = f.readString(); f.close(); }
+    String out = "{\"version\":1,\"settings\":" + s + ",\"users\":" + u + "}";
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", out);
+    response->addHeader("Content-Disposition", "attachment; filename=esp32-backup.json");
+    request->send(response);
+  });
+
+  server.on("/settings/restore", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    if (total == 0 || total > 4096) { request->send(413); return; }
+    // الجسم قد يصل على أجزاء: اجمعه ثم عالجه عند اكتماله
+    if (index == 0) request->_tempObject = malloc(total + 1);
+    char* buf = (char*)request->_tempObject;
+    if (!buf) { request->send(500); return; }
+    memcpy(buf + index, data, len);
+    if (index + len < total) return;
+    buf[total] = 0;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, buf, total)) { request->send(400, "application/json", "{\"error\":\"invalid json\"}"); return; }
+    JsonArray st = doc["settings"].as<JsonArray>();
+    JsonArray us = doc["users"].as<JsonArray>();
+    bool valid = !st.isNull() && st.size() >= 1 && st[0].is<JsonObject>()
+              && !us.isNull() && us.size() >= 2
+              && us[0]["username"].is<const char*>() && us[0]["password"].is<const char*>()
+              && us[1]["username"].is<const char*>() && us[1]["password"].is<const char*>();
+    if (!valid) { request->send(400, "application/json", "{\"error\":\"invalid backup\"}"); return; }
+
+    File f = LittleFS.open("/settings.json", "w");
+    if (!f) { request->send(500); return; }
+    serializeJsonPretty(st, f); f.close();
+    f = LittleFS.open("/users.json", "w");
+    if (!f) { request->send(500); return; }
+    serializeJsonPretty(us, f); f.close();
+
+    request->send(200, "application/json", "{\"ok\":true}");
+    restartPending = true;
   });
 
   // CORS Options
@@ -668,7 +715,7 @@ void loop() {
     delay(300); // أمهل الرد 200 وقتاً ليصل قبل إعادة ضبط الواي فاي
     applyWiFi();
   }
-  if (otaRestartPending) {
+  if (restartPending) {
     delay(1000); // أمهل الرد وقتاً ليصل ثم أعد التشغيل
     ESP.restart();
   }

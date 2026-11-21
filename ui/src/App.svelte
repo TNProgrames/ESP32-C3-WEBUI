@@ -6,6 +6,7 @@
   import Comm from './lib/Comm.svelte';
   import Passwords from './lib/Passwords.svelte';
   import Ota from './lib/Ota.svelte';
+  import Backup from './lib/Backup.svelte';
 
   let role = $state(session.role);
   let tab = $state('dash');
@@ -15,6 +16,7 @@
     { id: 'wifi', label: 'الواي فاي', admin: true },
     { id: 'comm', label: 'الاتصال', admin: true },
     { id: 'pass', label: 'كلمات المرور', admin: true },
+    { id: 'backup', label: 'نسخ احتياطي', admin: true },
     { id: 'ota', label: 'تحديث', admin: true }
   ];
 
@@ -42,6 +44,7 @@
     {:else if tab === 'wifi'}<Wifi />
     {:else if tab === 'comm'}<Comm />
     {:else if tab === 'pass'}<Passwords />
+    {:else if tab === 'backup'}<Backup />
     {:else if tab === 'ota'}<Ota />
     {/if}
   {/if}
