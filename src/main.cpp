@@ -6,6 +6,8 @@
 #include <FS.h>
 #include <ArduinoJson.h>  // Use Version 7.x
 #include <Update.h>
+#include <esp_timer.h>
+#include <stdarg.h>
 #include "em.h"           // تأكد من تعريف index_html داخل هذا الملف
 #include <string.h>
 
@@ -37,6 +39,42 @@ char otaError[64] = "";
 bool otaStarted = false;
 bool otaFsUnmounted = false;
 volatile bool restartPending = false; // إعادة تشغيل مؤجلة (OTA / استعادة النسخة الاحتياطية)
+
+// --- Firmware version (يمكن تمريره من البناء: -DFW_VERSION=\"v1.0.0\") ---
+#ifndef FW_VERSION
+#define FW_VERSION "dev"
+#endif
+
+// --- Log ring buffer (يُعرض في تبويب الطرفية) ---
+#define LOG_SIZE 4096
+static char logBuf[LOG_SIZE];
+static uint32_t logTotal = 0;
+static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void logPrintf(const char* fmt, ...) {
+  char tmp[160];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
+  va_end(ap);
+  if (n <= 0) return;
+  if (n >= (int)sizeof(tmp)) n = sizeof(tmp) - 1;
+  Serial.write((const uint8_t*)tmp, n);
+  portENTER_CRITICAL(&logMux);
+  for (int i = 0; i < n; i++) logBuf[(logTotal++) % LOG_SIZE] = tmp[i];
+  portEXIT_CRITICAL(&logMux);
+}
+
+static uint32_t uptimeSec() { return (uint32_t)(esp_timer_get_time() / 1000000ULL); }
+
+// --- Login lockout & password reset (بزر فيزيائي) ---
+static uint8_t  loginFails = 0;
+static uint32_t loginLockUntil = 0;
+static uint32_t resetWaitUntil = 0;   // != 0 : بانتظار الضغط على الزر
+static bool     resetDone = false;
+static uint32_t resetDoneAt = 0;
+static bool     resetSawHigh = false;
+static int      resetPin = -1;
 
 AsyncWebServer server(80);
 
@@ -159,7 +197,7 @@ bool getJson(const char* filePath, const char* path, char* outValue, size_t outV
 
 void applyWiFi() {
   wifiIsWorking = true;
-  Serial.println("Reconfiguring WiFi...");
+  logPrintf("Reconfiguring WiFi...\n");
   WiFi.disconnect();
   WiFi.softAPdisconnect(true);
   delay(500);
@@ -186,15 +224,16 @@ void applyWiFi() {
     // فحص النجاح لمدة 10 ثواني
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-      delay(500); Serial.print("."); attempts++;
+      delay(500); attempts++;
     }
 
     if (WiFi.status() != WL_CONNECTED && !wantAp) {
-      Serial.println("STA Failed! Reverting to AP Safety Mode");
+      logPrintf("STA failed, reverting to AP safety mode\n");
       WiFi.mode(WIFI_AP);
       WiFi.softAP("RECOVERY_MODE", "12345678");
     }
   }
+  if (WiFi.status() == WL_CONNECTED) logPrintf("WiFi connected: %s\n", WiFi.localIP().toString().c_str());
   wifiIsWorking = false;
 }
 
@@ -202,8 +241,9 @@ void applyWiFi() {
 
 void loadsetting() {
   Serial.begin(115200);
+  logPrintf("Boot %s\n", FW_VERSION);
   if (!LittleFS.begin(true)) {
-    Serial.println(F("LittleFS Mount Failed"));
+    logPrintf("LittleFS mount failed\n");
     return;
   }
 
@@ -288,6 +328,67 @@ static bool getPathParam(AsyncWebServerRequest *request, const char* name, Strin
     if (!request->hasParam(name)) return false;
     out = request->getParam(name)->value();
     return validPath(out);
+}
+
+// --- Terminal commands ---
+static String formatUptime(uint32_t sec) {
+  char b[40];
+  snprintf(b, sizeof(b), "%lud %02luh %02lum %02lus", (unsigned long)(sec / 86400), (unsigned long)((sec / 3600) % 24), (unsigned long)((sec / 60) % 60), (unsigned long)(sec % 60));
+  return String(b);
+}
+
+static String runCommand(String line) {
+  line.trim();
+  if (line.length() == 0) return "";
+  int sp = line.indexOf(' ');
+  String c = sp < 0 ? line : line.substring(0, sp);
+  String arg = sp < 0 ? String("") : line.substring(sp + 1);
+  arg.trim();
+  c.toLowerCase();
+
+  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot";
+  if (c == "version") return String("firmware ") + FW_VERSION + "\nchip " + ESP.getChipModel() + " rev " + String(ESP.getChipRevision()) + "\nsdk " + ESP.getSdkVersion();
+  if (c == "uptime") return formatUptime(uptimeSec());
+  if (c == "heap") return String("free ") + String(ESP.getFreeHeap()) + " / total " + String(ESP.getHeapSize()) + " / min free " + String(ESP.getMinFreeHeap());
+  if (c == "df") return String("used ") + String((unsigned long)LittleFS.usedBytes()) + " / total " + String((unsigned long)LittleFS.totalBytes());
+  if (c == "echo") return arg;
+  if (c == "reboot") { restartPending = true; return "Rebooting..."; }
+  if (c == "wifi") {
+    wifi_mode_t m = WiFi.getMode();
+    String o = String("mode: ") + (m == WIFI_AP ? "AP" : (m == WIFI_STA ? "STA" : (m == WIFI_AP_STA ? "AP_STA" : "OFF")));
+    o += "\nAP ip: " + WiFi.softAPIP().toString();
+    if (WiFi.status() == WL_CONNECTED) o += "\nSTA ssid: " + WiFi.SSID() + "\nSTA ip: " + WiFi.localIP().toString() + "\nrssi: " + String(WiFi.RSSI());
+    else o += "\nSTA: disconnected";
+    return o;
+  }
+  if (c == "ls") {
+    String p = arg.length() ? arg : String("/");
+    if (!validPath(p)) return "invalid path";
+    File d = LittleFS.open(p);
+    if (!d || !d.isDirectory()) return "not a directory";
+    String o;
+    File f = d.openNextFile();
+    while (f) {
+      o += f.isDirectory() ? "[D] " : "    ";
+      o += f.name();
+      if (!f.isDirectory()) { o += "  "; o += String((unsigned long)f.size()); }
+      o += "\n";
+      f = d.openNextFile();
+    }
+    return o.length() ? o : String("(empty)");
+  }
+  return "Unknown command: " + c + " (type help)";
+}
+
+// --- Password reset (يتطلب ضغط الزر الفيزيائي) ---
+static int resetPinNumber() { return pinreset[0] ? atoi(pinreset) : 9; }
+
+static void doPasswordReset() {
+  updateOrCreateJson("/users.json", "0_Obj.password", "admin123");
+  updateOrCreateJson("/users.json", "1_Obj.password", "user123");
+  Admin_Token[0] = 0; User_Token[0] = 0;
+  loginFails = 0; loginLockUntil = 0;
+  logPrintf("Passwords reset to defaults\n");
 }
 
 // OTA: admin يحدّث البرنامج أو الواجهة، ومفتاح الطوارئ يحدّث الواجهة (type=fs) فقط
@@ -460,6 +561,10 @@ void setupServerWeb() {
     const char* u = doc["username"];
     const char* p = doc["password"];
     if (!u || !p) { request->send(400); return; }
+    if (loginLockUntil && (int32_t)(millis() - loginLockUntil) < 0) {
+      request->send(429, "application/json", "{\"error\":\"locked\"}");
+      return;
+    }
 
     char passWord[33] = "", token[33];
     int userIdx = (strcmp(u, "admin") == 0) ? 0 : ((strcmp(u, "user") == 0) ? 1 : -1);
@@ -474,11 +579,37 @@ void setupServerWeb() {
         else strlcpy(User_Token, token, sizeof(User_Token));
         char res[128];
         snprintf(res, sizeof(res), "{\"token\":\"%s\", \"role\":\"%s\"}", token, u);
+        loginFails = 0; loginLockUntil = 0;
+        logPrintf("Login ok: %s\n", u);
         request->send(200, "application/json", res);
         return;
       }
     }
+    logPrintf("Login failed: %s\n", u);
+    if (++loginFails >= 5) { loginFails = 0; loginLockUntil = millis() + 30000; if (!loginLockUntil) loginLockUntil = 1; }
     request->send(401);
+  });
+
+  // --- إعادة ضبط كلمة المرور: تتطلب ضغط الزر الفيزيائي (GPIO من إعداد pinreset) خلال 30 ثانية ---
+  server.on("/login/reset_request", HTTP_POST, [](AsyncWebServerRequest *request){
+    int pin = resetPinNumber();
+    if (pin < 0 || pin > 21 || pin == 18 || pin == 19) { request->send(400, "application/json", "{\"error\":\"bad pin\"}"); return; }
+    resetPin = pin; resetDone = false; resetSawHigh = false;
+    resetWaitUntil = millis() + 30000; if (!resetWaitUntil) resetWaitUntil = 1;
+    pinMode(pin, INPUT_PULLUP);
+    logPrintf("Password reset requested: press GPIO%d within 30s\n", pin);
+    char res[48];
+    snprintf(res, sizeof(res), "{\"pin\":%d,\"seconds\":30}", pin);
+    request->send(200, "application/json", res);
+  });
+
+  server.on("/login/reset_status", HTTP_GET, [](AsyncWebServerRequest *request){
+    JsonDocument d;
+    if (resetDone && (millis() - resetDoneAt) < 60000) { d["state"] = "done"; d["admin"] = "admin123"; d["user"] = "user123"; }
+    else if (resetWaitUntil) { int32_t left = (int32_t)(resetWaitUntil - millis()); d["state"] = "waiting"; d["left"] = left > 0 ? left / 1000 : 0; d["pin"] = resetPin; }
+    else d["state"] = "idle";
+    String o; serializeJson(d, o);
+    request->send(200, "application/json", o);
   });
 
   // --- Settings SAVE APIs ---
@@ -600,9 +731,9 @@ void setupServerWeb() {
 
   server.on("/hdusage", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAnyToken(request)) { request->send(401); return; }
-    char r[16], s[16], res[128];
+    char r[16], s[16], res[192];
     RamUsage(r, 16); StorageUsage(s, 16);
-    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\"}", r, s);
+    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu}", r, s, FW_VERSION, (unsigned long)uptimeSec());
     request->send(200, "application/json", res);
   });
 
@@ -691,6 +822,51 @@ void setupServerWeb() {
     restartPending = true;
   });
 
+  // --- إعادة التشغيل (admin) ---
+  server.on("/settings/restart", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    logPrintf("Restart requested\n");
+    request->send(200, "application/json", "{\"ok\":true}");
+    restartPending = true;
+  });
+
+  // --- الطرفية (admin): قراءة السجل وإرسال الأوامر ---
+  server.on("/terminal/log", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    uint32_t since = request->hasParam("since") ? strtoul(request->getParam("since")->value().c_str(), NULL, 10) : 0;
+    char* tmp = (char*)malloc(LOG_SIZE + 1);
+    if (!tmp) { request->send(500); return; }
+    portENTER_CRITICAL(&logMux);
+    uint32_t total = logTotal;
+    uint32_t oldest = total > LOG_SIZE ? total - LOG_SIZE : 0;
+    uint32_t start = (since > total || since < oldest) ? oldest : since;
+    uint32_t n = total - start;
+    for (uint32_t i = 0; i < n; i++) tmp[i] = logBuf[(start + i) % LOG_SIZE];
+    portEXIT_CRITICAL(&logMux);
+    tmp[n] = 0;
+    JsonDocument d;
+    d["seq"] = total;
+    d["text"] = (const char*)tmp;
+    String o; serializeJson(d, o);
+    free(tmp);
+    request->send(200, "application/json", o);
+  });
+
+  server.on("/terminal/cmd", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    if (index != 0 || len != total || total > 256) { request->send(413); return; }
+    JsonDocument d;
+    if (deserializeJson(d, data, len)) { request->send(400); return; }
+    const char* c = d["cmd"];
+    if (!c) { request->send(400); return; }
+    String out = runCommand(String(c));
+    JsonDocument r;
+    r["out"] = out;
+    String o; serializeJson(r, o);
+    request->send(200, "application/json", o);
+  });
+
   // CORS Options
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);
@@ -714,6 +890,20 @@ void loop() {
     wifiApplyPending = false;
     delay(300); // أمهل الرد 200 وقتاً ليصل قبل إعادة ضبط الواي فاي
     applyWiFi();
+  }
+  if (resetWaitUntil) {
+    if ((int32_t)(millis() - resetWaitUntil) >= 0) {
+      resetWaitUntil = 0;
+      logPrintf("Password reset timed out\n");
+    } else if (!resetSawHigh) {
+      if (digitalRead(resetPin) == HIGH) resetSawHigh = true;   // يجب أن يكون الزر غير مضغوط أولاً
+    } else if (digitalRead(resetPin) == LOW) {
+      delay(50);
+      if (digitalRead(resetPin) == LOW) {
+        doPasswordReset();
+        resetWaitUntil = 0; resetDone = true; resetDoneAt = millis();
+      }
+    }
   }
   if (restartPending) {
     delay(1000); // أمهل الرد وقتاً ليصل ثم أعد التشغيل

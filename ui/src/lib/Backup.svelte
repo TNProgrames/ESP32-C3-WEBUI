@@ -1,5 +1,6 @@
 <script>
   import { api, session } from '../api.js';
+  import { t } from '../store.svelte.js';
 
   let msg = $state('');
   let ok = $state(true);
@@ -17,39 +18,39 @@
       a.download = 'esp32-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
       URL.revokeObjectURL(a.href);
-      ok = true; msg = 'تم تنزيل النسخة الاحتياطية';
-    } catch (e) { ok = false; msg = 'فشل التنزيل: ' + e.message; }
+      ok = true; msg = t('تم تنزيل النسخة الاحتياطية');
+    } catch (e) { ok = false; msg = t('فشل التنزيل: ') + e.message; }
     busy = false;
   }
 
   async function restore() {
     if (!file) return;
-    if (!confirm('ستُستبدل الإعدادات وكلمات المرور الحالية بمحتوى الملف ويُعاد تشغيل الجهاز. متابعة؟')) return;
+    if (!confirm(t('ستُستبدل الإعدادات وكلمات المرور الحالية بمحتوى الملف ويُعاد تشغيل الجهاز. متابعة؟'))) return;
     busy = true; msg = '';
     try {
       const obj = JSON.parse(await file.text());
       await api('/settings/restore', obj);
-      ok = true; msg = 'تمت الاستعادة. يُعاد تشغيل الجهاز، سجّل الدخول من جديد...';
+      ok = true; msg = t('تمت الاستعادة. يُعاد تشغيل الجهاز، سجّل الدخول من جديد...');
       setTimeout(() => { session.clear(); location.reload(); }, 8000);
     } catch (e) {
-      ok = false; msg = e instanceof SyntaxError ? 'الملف ليس JSON صالحًا' : 'فشلت الاستعادة (تحقق من الملف)';
+      ok = false; msg = e instanceof SyntaxError ? t('الملف ليس JSON صالحًا') : t('فشلت الاستعادة (تحقق من الملف)');
       busy = false;
     }
   }
 </script>
 
 <div class="glass">
-  <h2>نسخة احتياطية</h2>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">تحفظ الإعدادات (الواي فاي، الاتصال، PIN) وكلمات المرور في ملف JSON واحد.</p>
-  <button class="btn green" onclick={download} disabled={busy}>تنزيل النسخة الاحتياطية</button>
-  <p style="font-size:12px;color:var(--warning);margin-top:10px">تنبيه: الملف يحتوي كلمات المرور كنص صريح، فاحفظه في مكان آمن.</p>
+  <h2>💾 {t('نسخة احتياطية')}</h2>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">{t('تحفظ الإعدادات (الواي فاي، الاتصال، PIN) وكلمات المرور في ملف JSON واحد.')}</p>
+  <button class="btn green" onclick={download} disabled={busy}>{t('تنزيل النسخة الاحتياطية')}</button>
+  <p style="font-size:12px;color:var(--warning);margin-top:10px">{t('تنبيه: الملف يحتوي كلمات المرور كنص صريح، فاحفظه في مكان آمن.')}</p>
 </div>
 
 <div class="glass">
-  <h2>استعادة</h2>
-  <label for="r">ملف النسخة الاحتياطية (.json)</label>
+  <h2>♻️ {t('استعادة')}</h2>
+  <label for="r">{t('ملف النسخة الاحتياطية (.json)')}</label>
   <input id="r" type="file" accept=".json,application/json" onchange={(e) => (file = e.currentTarget.files[0])} disabled={busy} />
-  <div style="margin-top:14px"><button class="btn" onclick={restore} disabled={busy || !file}>استعادة وإعادة التشغيل</button></div>
+  <div style="margin-top:14px"><button class="btn" onclick={restore} disabled={busy || !file}>{t('استعادة وإعادة التشغيل')}</button></div>
 </div>
 
 <div class="msg" class:ok class:err={!ok}>{msg}</div>
