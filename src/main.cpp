@@ -5,6 +5,7 @@
 #include <LittleFS.h>
 #include <FS.h>
 #include <ArduinoJson.h>  // Use Version 7.x
+#include <Update.h>
 #include "em.h"           // تأكد من تعريف index_html داخل هذا الملف
 #include <string.h>
 
@@ -30,6 +31,12 @@ char User_Token[33] = "";
 // --- WiFi is Working 
 bool wifiIsWorking = false;
 volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
+
+// --- OTA State ---
+char otaError[64] = "";
+bool otaStarted = false;
+bool otaFsUnmounted = false;
+volatile bool otaRestartPending = false;
 
 AsyncWebServer server(80);
 
@@ -592,6 +599,44 @@ void setupServerWeb() {
     request->send(200, "application/json", res);
   });
 
+  // --- OTA (admin فقط): POST /api/ota?type=fw  (firmware.bin)  أو  type=fs  (littlefs.bin) ---
+  server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    bool started = otaStarted;
+    otaStarted = false;
+    if (otaError[0]) {
+      if (otaFsUnmounted) { LittleFS.begin(false); otaFsUnmounted = false; } // أعد تركيب النظام بعد الفشل
+      request->send(500, "application/json", String("{\"error\":\"") + otaError + "\"}");
+      return;
+    }
+    if (!started) { request->send(400, "application/json", "{\"error\":\"no file\"}"); return; }
+    request->send(200, "application/json", "{\"ok\":true}");
+    otaRestartPending = true;
+  }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    if (!index) {
+      otaError[0] = 0;
+      otaStarted = false;
+      if (!isAdminToken(request)) { strlcpy(otaError, "unauthorized", sizeof(otaError)); return; }
+      bool fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
+      if (!fs && (len == 0 || data[0] != 0xE9)) { strlcpy(otaError, "not a firmware image", sizeof(otaError)); return; }
+      if (fs) { LittleFS.end(); otaFsUnmounted = true; }
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, fs ? U_SPIFFS : U_FLASH)) {
+        strlcpy(otaError, Update.errorString(), sizeof(otaError));
+        return;
+      }
+      otaStarted = true;
+    }
+    if (otaError[0] || !otaStarted) return;
+    if (Update.write(data, len) != len) {
+      strlcpy(otaError, Update.errorString(), sizeof(otaError));
+      Update.abort();
+      return;
+    }
+    if (final && !Update.end(true)) {
+      strlcpy(otaError, Update.errorString(), sizeof(otaError));
+    }
+  });
+
   // CORS Options
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);
@@ -615,6 +660,10 @@ void loop() {
     wifiApplyPending = false;
     delay(300); // أمهل الرد 200 وقتاً ليصل قبل إعادة ضبط الواي فاي
     applyWiFi();
+  }
+  if (otaRestartPending) {
+    delay(1000); // أمهل الرد وقتاً ليصل ثم أعد التشغيل
+    ESP.restart();
   }
   delay(10);
 }
