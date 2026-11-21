@@ -290,6 +290,13 @@ static bool getPathParam(AsyncWebServerRequest *request, const char* name, Strin
     return validPath(out);
 }
 
+// OTA: admin يحدّث البرنامج أو الواجهة، ومفتاح الطوارئ يحدّث الواجهة (type=fs) فقط
+static bool otaAllowed(AsyncWebServerRequest *request) {
+    if (isAdminToken(request)) return true;
+    bool fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
+    return fs && isAuthorizedEm(request);
+}
+
 // --- Emergency APIs Setup ---
 
 void EmSetupAPI() {
@@ -599,9 +606,9 @@ void setupServerWeb() {
     request->send(200, "application/json", res);
   });
 
-  // --- OTA (admin فقط): POST /api/ota?type=fw  (firmware.bin)  أو  type=fs  (littlefs.bin) ---
+  // --- OTA (admin، أو مفتاح الطوارئ للواجهة فقط): POST /api/ota?type=fw  (firmware.bin)  أو  type=fs  (littlefs.bin) ---
   server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {
-    if (!isAdminToken(request)) { request->send(401); return; }
+    if (!otaAllowed(request)) { request->send(401); return; }
     bool started = otaStarted;
     otaStarted = false;
     if (otaError[0]) {
@@ -616,7 +623,7 @@ void setupServerWeb() {
     if (!index) {
       otaError[0] = 0;
       otaStarted = false;
-      if (!isAdminToken(request)) { strlcpy(otaError, "unauthorized", sizeof(otaError)); return; }
+      if (!otaAllowed(request)) { strlcpy(otaError, "unauthorized", sizeof(otaError)); return; }
       bool fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
       if (!fs && (len == 0 || data[0] != 0xE9)) { strlcpy(otaError, "not a firmware image", sizeof(otaError)); return; }
       if (fs) { LittleFS.end(); otaFsUnmounted = true; }
