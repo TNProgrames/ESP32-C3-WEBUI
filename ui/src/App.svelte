@@ -5,6 +5,7 @@
   import Wifi from './lib/Wifi.svelte';
   import Comm from './lib/Comm.svelte';
   import Passwords from './lib/Passwords.svelte';
+  import Ota from './lib/Ota.svelte';
 
   let role = $state(session.role);
   let tab = $state('dash');
@@ -13,7 +14,8 @@
     { id: 'dash', label: 'الحالة', admin: false },
     { id: 'wifi', label: 'الواي فاي', admin: true },
     { id: 'comm', label: 'الاتصال', admin: true },
-    { id: 'pass', label: 'كلمات المرور', admin: true }
+    { id: 'pass', label: 'كلمات المرور', admin: true },
+    { id: 'ota', label: 'تحديث', admin: true }
   ];
 
   function onLogin(r) { role = r; tab = 'dash'; }
@@ -40,6 +42,7 @@
     {:else if tab === 'wifi'}<Wifi />
     {:else if tab === 'comm'}<Comm />
     {:else if tab === 'pass'}<Passwords />
+    {:else if tab === 'ota'}<Ota />
     {/if}
   {/if}
 </div>
