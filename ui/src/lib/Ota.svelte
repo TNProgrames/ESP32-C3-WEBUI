@@ -1,5 +1,6 @@
 <script>
   import { session } from '../api.js';
+  import { t } from '../store.svelte.js';
 
   let fwFile = $state(null);
   let fsFile = $state(null);
@@ -20,7 +21,7 @@
         try { err = JSON.parse(x.responseText).error || err; } catch {}
         reject(new Error(err));
       };
-      x.onerror = () => reject(new Error('انقطع الاتصال أثناء الرفع'));
+      x.onerror = () => reject(new Error(t('انقطع الاتصال أثناء الرفع')));
       const fd = new FormData();
       fd.append('file', file, file.name);
       x.send(fd);
@@ -30,36 +31,36 @@
   async function run(file, type) {
     if (!file) return;
     const warn = type === 'fs'
-      ? 'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. هل تريد المتابعة؟'
-      : 'سيُحدَّث البرنامج ثم يُعاد تشغيل الجهاز. هل تريد المتابعة؟';
+      ? t('تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. هل تريد المتابعة؟')
+      : t('سيُحدَّث البرنامج ثم يُعاد تشغيل الجهاز. هل تريد المتابعة؟');
     if (!confirm(warn)) return;
     busy = true; progress = 0; msg = ''; ok = true;
     try {
       await send(file, type);
-      msg = 'تم التحديث. يُعاد تشغيل الجهاز، وستحتاج إلى تسجيل الدخول من جديد...';
+      msg = t('تم التحديث. يُعاد تشغيل الجهاز، وستحتاج إلى تسجيل الدخول من جديد...');
       setTimeout(() => { session.clear(); location.reload(); }, 12000);
     } catch (e) {
-      ok = false; msg = 'فشل التحديث: ' + e.message; busy = false;
+      ok = false; msg = t('فشل التحديث: ') + e.message; busy = false;
     }
   }
 </script>
 
 <div class="glass">
-  <h2>تحديث البرنامج (firmware)</h2>
-  <label for="fw">الملف firmware-*.bin</label>
+  <h2>⬆️ {t('تحديث البرنامج (firmware)')}</h2>
+  <label for="fw">{t('الملف firmware-*.bin')}</label>
   <input id="fw" type="file" accept=".bin" onchange={(e) => (fwFile = e.currentTarget.files[0])} disabled={busy} />
   <div style="margin-top:14px">
-    <button class="btn green" disabled={busy || !fwFile} onclick={() => run(fwFile, 'fw')}>رفع وتحديث</button>
+    <button class="btn green" disabled={busy || !fwFile} onclick={() => run(fwFile, 'fw')}>{t('رفع وتحديث')}</button>
   </div>
 </div>
 
 <div class="glass">
-  <h2>تحديث الواجهة (littlefs)</h2>
-  <label for="fs">الملف littlefs-*.bin</label>
+  <h2>🖥️ {t('تحديث الواجهة (littlefs)')}</h2>
+  <label for="fs">{t('الملف littlefs-*.bin')}</label>
   <input id="fs" type="file" accept=".bin" onchange={(e) => (fsFile = e.currentTarget.files[0])} disabled={busy} />
-  <p style="font-size:12px;color:var(--warning);margin-top:8px">تحذير: هذا يمسح الإعدادات وكلمات المرور المحفوظة ويعيدها للافتراضي.</p>
+  <p style="font-size:12px;color:var(--warning);margin-top:8px">{t('تحذير: هذا يمسح الإعدادات وكلمات المرور المحفوظة ويعيدها للافتراضي.')}</p>
   <div style="margin-top:14px">
-    <button class="btn green" disabled={busy || !fsFile} onclick={() => run(fsFile, 'fs')}>رفع وتحديث</button>
+    <button class="btn green" disabled={busy || !fsFile} onclick={() => run(fsFile, 'fs')}>{t('رفع وتحديث')}</button>
   </div>
 </div>
 

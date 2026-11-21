@@ -18,7 +18,7 @@ export async function api(path, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
-  if (res.status === 401 && path !== '/login' && !path.startsWith('/settings/get_stat') && !path.startsWith('/settings/scan_wifi')) {
+  if (res.status === 401 && !path.startsWith('/login') && !path.startsWith('/settings/get_stat') && !path.startsWith('/settings/scan_wifi')) {
     session.clear();
     location.reload();
   }

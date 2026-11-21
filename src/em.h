@@ -50,6 +50,14 @@ static const char index_html[] PROGMEM = R"rawliteral(
         textarea { flex: 1; background: #000; color: #10b981; border: none; padding: 20px; font-family: 'Courier New', monospace; font-size: 14px; resize: none; outline: none; }
 
         .hidden { display: none; }
+        [data-theme="light"] { --bg: #f1f5f9; --panel: #ffffff; --text: #0f172a; --border: rgba(0,0,0,0.14); }
+        [data-theme="light"] textarea { background: #fff; color: #047857; }
+        [data-theme="light"] .modal { background: rgba(255,255,255,0.95); }
+        [data-theme="light"] .modal-box { background: #f8fafc; }
+        [data-theme="light"] .btn-ghost { background: rgba(0,0,0,0.06); color: #475569; }
+        [data-theme="light"] .glass { box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+        .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; z-index: 2000; }
+        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
         @media (max-width: 600px) { .header { flex-direction: column; align-items: stretch; } .btn { flex: 1; justify-content: center; } }
     </style>
 </head>
@@ -63,7 +71,7 @@ static const char index_html[] PROGMEM = R"rawliteral(
                     <svg class="icon" viewBox="0 0 24 24"><path d="M12,15.5A2.5,2.5 0 0,1 9.5,13A2.5,2.5 0 0,1 12,10.5A2.5,2.5 0 0,1 14.5,13A2.5,2.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11.03L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.47,5.34 14.86,5.08L14.47,2.44C14.43,2.19 14.22,2 13.97,2H9.97C9.72,2 9.5,2.19 9.47,2.44L9.08,5.08C8.47,5.34 7.9,5.66 7.38,6.05L4.89,5.05C4.67,4.96 4.4,5.05 4.28,5.27L2.28,8.73C2.16,8.95 2.21,9.22 2.4,9.37L4.51,11.03C4.47,12.65 4.5,12.33 4.5,12C4.5,11.67 4.47,11.34 4.51,11.03L2.4,12.63C2.21,12.78 2.16,13.05 2.28,13.27L4.28,16.73C4.4,16.95 4.67,17.04 4.89,16.95L7.38,15.95C7.9,16.34 8.47,16.66 9.08,16.92L9.47,19.56C9.5,19.81 9.72,20 9.97,20H13.97C14.22,20 14.43,19.81 14.47,19.56L14.86,16.92C15.47,16.66 16.04,16.34 16.56,15.95L19.05,16.95C19.27,17.04 19.54,16.95 19.66,16.73L21.66,13.27C21.78,13.05 21.73,12.78 21.54,12.63L19.43,12.97Z"/></svg>
                 </div>
                 <div>
-                    <h2 style="font-size:16px;">مدير الملفات</h2>
+                    <h2 style="font-size:16px;" data-t>مدير الملفات</h2>
                     <p id="storage-txt" style="font-size:10px; color:#64748b; font-family:monospace;"></p>
                 </div>
             </div>
@@ -71,23 +79,23 @@ static const char index_html[] PROGMEM = R"rawliteral(
             <div class="btn-group">
                 <input type="file" id="u-input" class="hidden" onchange="uploadFile()">
                 <button class="btn btn-emerald" onclick="document.getElementById('u-input').click()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/></svg> رفع
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/></svg> <span data-t>رفع</span>
                 </button>
                 <button class="btn btn-indigo" onclick="createNewFile()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg> ملف
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg> <span data-t>ملف</span>
                 </button>
                 <button class="btn btn-indigo" onclick="createNewDir()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10M15,9V12H12V14H15V17H17V14H20V12H17V9H15Z"/></svg> مجلد
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10M15,9V12H12V14H15V17H17V14H20V12H17V9H15Z"/></svg> <span data-t>مجلد</span>
                 </button>
                 <button class="btn btn-red" onclick="formatFS()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M20.37,8.91L19.37,10.64L15.03,8.14L16.03,6.4L18.53,7.85L17.53,6.12L15.8,7.12L14.8,5.38L20,2.38L21,4.11L19.27,5.11L20.27,6.85L22.77,5.4L23.77,7.13L18.57,10.13L20.37,8.91M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg> تهيئة
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M20.37,8.91L19.37,10.64L15.03,8.14L16.03,6.4L18.53,7.85L17.53,6.12L15.8,7.12L14.8,5.38L20,2.38L21,4.11L19.27,5.11L20.27,6.85L22.77,5.4L23.77,7.13L18.57,10.13L20.37,8.91M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg> <span data-t>تهيئة</span>
                 </button>
                 <input type="file" id="ota-input" class="hidden" accept=".bin" onchange="otaFs()">
                 <button class="btn btn-amber" onclick="document.getElementById('ota-input').click()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg> تحديث الواجهة
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg> <span data-t>تحديث الواجهة</span>
                 </button>
                 <button class="btn btn-ghost" onclick="logout()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg> خروج
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg> <span data-t>خروج</span>
                 </button>
             </div>
         </div>
@@ -100,9 +108,9 @@ static const char index_html[] PROGMEM = R"rawliteral(
             <table>
                 <thead>
                     <tr>
-                        <th style="width:50%">الاسم</th>
-                        <th style="text-align:center">الحجم</th>
-                        <th style="text-align:center">الإجراءات</th>
+                        <th style="width:50%" data-t>الاسم</th>
+                        <th style="text-align:center" data-t>الحجم</th>
+                        <th style="text-align:center" data-t>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody id="file-list"></tbody>
@@ -115,17 +123,48 @@ static const char index_html[] PROGMEM = R"rawliteral(
         <div class="modal-box">
             <div class="modal-header">
                 <span id="editor-title" style="color:var(--primary); font-family:monospace;"></span>
-                <button class="btn btn-ghost" onclick="closeEditor()">إغلاق ✕</button>
+                <button class="btn btn-ghost" onclick="closeEditor()" data-t>إغلاق ✕</button>
             </div>
             <textarea id="editor-content" spellcheck="false"></textarea>
             <div style="padding:15px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
-                <button class="btn btn-indigo" onclick="saveFile()" style="padding:12px 40px;">حفظ الملف</button>
+                <button class="btn btn-indigo" onclick="saveFile()" style="padding:12px 40px;" data-t>حفظ الملف</button>
             </div>
         </div>
     </div>
 
+    <div class="fabs">
+        <button class="fab" id="fab-lang" onclick="toggleLang()" aria-label="language">EN</button>
+        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
+    </div>
+
     <script>
         let currentPath = "/";
+
+        // --- اللغة والمظهر ---
+        const EN = {
+            'مدير الملفات': 'File manager', 'رفع': 'Upload', 'ملف': 'File', 'مجلد': 'Folder', 'تهيئة': 'Format',
+            'تحديث الواجهة': 'Update UI', 'خروج': 'Logout', 'الاسم': 'Name', 'الحجم': 'Size', 'الإجراءات': 'Actions',
+            'إغلاق ✕': 'Close ✕', 'حفظ الملف': 'Save file', 'الرئيسية': 'Home',
+            'اسم الملف:': 'File name:', 'اسم المجلد:': 'Folder name:', 'حذف نهائي؟': 'Delete permanently?',
+            'الاسم/المسار الجديد:': 'New name/path:', 'تحذير: سيتم مسح الذاكرة بالكامل!': 'Warning: the whole filesystem will be erased!',
+            'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟': 'Updating the UI replaces the whole filesystem and wipes settings and passwords. Continue?',
+            'تم التحديث، يُعاد تشغيل الجهاز...': 'Updated, the device is restarting...',
+            'فشل التحديث: ': 'Update failed: ', 'انقطع الاتصال': 'Connection lost'
+        };
+        const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; };
+        let lang = LS('em_lang') || 'ar';
+        let theme = LS('em_theme') || 'dark';
+        function T(s) { return lang === 'en' ? (EN[s] || s) : s; }
+        function applyUi() {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.documentElement.dataset.theme = theme;
+            document.querySelectorAll('[data-t]').forEach(e => { if (!e.dataset.ar) e.dataset.ar = e.textContent.trim(); e.textContent = T(e.dataset.ar); });
+            document.getElementById('fab-lang').textContent = lang === 'ar' ? 'EN' : 'ع';
+            document.getElementById('fab-theme').textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        function toggleLang() { lang = lang === 'ar' ? 'en' : 'ar'; LS('em_lang', lang); applyUi(); loadFiles(currentPath); }
+        function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; LS('em_theme', theme); applyUi(); }
 
         // SVGs as strings for offline use
         const svgDir = '<svg class="icon" style="color:var(--warning)" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10Z"/></svg>';
@@ -188,7 +227,7 @@ static const char index_html[] PROGMEM = R"rawliteral(
 
         function updateBreadcrumbs() {
             const parts = currentPath.split('/').filter(p => p);
-            let html = `<span style="cursor:pointer;" onclick="loadFiles('/')">الرئيسية</span>`;
+            let html = `<span style="cursor:pointer;" onclick="loadFiles('/')">${T('الرئيسية')}</span>`;
             let acc = "";
             parts.forEach(p => { acc += "/" + p; html += ` <span style="color:#334155; margin:0 5px;">/</span> <span style="cursor:pointer;" onclick="loadFiles('${acc}')">${p}</span>`; });
             document.getElementById('breadcrumbs').innerHTML = html;
@@ -204,7 +243,7 @@ static const char index_html[] PROGMEM = R"rawliteral(
         }
 
         async function createNewFile() {
-            const n = prompt("اسم الملف:");
+            const n = prompt(T("اسم الملف:"));
             if (n) {
                 const path = (currentPath==="/"?"":currentPath)+"/"+n;
                 document.getElementById('editor-title').innerText = path;
@@ -214,7 +253,7 @@ static const char index_html[] PROGMEM = R"rawliteral(
         }
 
         async function createNewDir() {
-            const n = prompt("اسم المجلد:");
+            const n = prompt(T("اسم المجلد:"));
             if (n) {
                 const path = (currentPath==="/"?"":currentPath)+"/"+n;
                 await request(`/api/mkdir?path=${encodeURIComponent(path)}`, 'POST');
@@ -238,16 +277,16 @@ static const char index_html[] PROGMEM = R"rawliteral(
         }
 
         async function deleteItem(path) {
-            if (confirm("حذف نهائي؟")) { await request(`/api/delete?path=${encodeURIComponent(path)}`, 'DELETE'); loadFiles(currentPath); }
+            if (confirm(T("حذف نهائي؟"))) { await request(`/api/delete?path=${encodeURIComponent(path)}`, 'DELETE'); loadFiles(currentPath); }
         }
 
         async function renameItem(path) {
-            const n = prompt("الاسم/المسار الجديد:", path);
+            const n = prompt(T("الاسم/المسار الجديد:"), path);
             if (n) { await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`); loadFiles(currentPath); }
         }
 
         async function formatFS() {
-            if (confirm("تحذير: سيتم مسح الذاكرة بالكامل!")) { await request('/api/format', 'POST'); location.reload(); }
+            if (confirm(T("تحذير: سيتم مسح الذاكرة بالكامل!"))) { await request('/api/format', 'POST'); location.reload(); }
         }
 
         // تحديث الواجهة (littlefs.bin) عبر OTA بمفتاح الطوارئ
@@ -255,22 +294,22 @@ static const char index_html[] PROGMEM = R"rawliteral(
             const inp = document.getElementById('ota-input');
             const f = inp.files[0];
             if (!f) return;
-            if (!confirm("تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟")) { inp.value = ''; return; }
+            if (!confirm(T("تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟"))) { inp.value = ''; return; }
             const st = document.getElementById('storage-txt');
             const x = new XMLHttpRequest();
             x.open('POST', '/api/ota?type=fs');
             x.upload.onprogress = e => { if (e.lengthComputable) st.innerText = 'OTA: ' + Math.round(e.loaded / e.total * 100) + '%'; };
             x.onload = () => {
-                if (x.status === 200) { st.innerText = 'تم التحديث، يُعاد تشغيل الجهاز...'; setTimeout(() => location.reload(), 12000); }
-                else { alert('فشل التحديث: ' + x.responseText); inp.value = ''; loadFiles(currentPath); }
+                if (x.status === 200) { st.innerText = T('تم التحديث، يُعاد تشغيل الجهاز...'); setTimeout(() => location.reload(), 12000); }
+                else { alert(T('فشل التحديث: ') + x.responseText); inp.value = ''; loadFiles(currentPath); }
             };
-            x.onerror = () => { alert('انقطع الاتصال'); inp.value = ''; };
+            x.onerror = () => { alert(T('انقطع الاتصال')); inp.value = ''; };
             const fd = new FormData(); fd.append('file', f, f.name); x.send(fd);
         }
 
         function logout() { document.cookie = "session_key=; Max-Age=0; path=/;"; location.href = "/"; }
         function closeEditor() { document.getElementById('editor-modal').style.display = 'none'; }
-        window.onload = () => loadFiles('/');
+        window.onload = () => { applyUi(); loadFiles('/'); };
     </script>
 </body>
 </html>
@@ -283,29 +322,60 @@ static const char login_html[] PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 - دخول الطوارئ</title>
+    <title>ESP32</title>
     <style>
+        :root { --bg: #0a0a0f; --panel: #16161e; --text: #f1f5f9; --muted: #94a3b8; --input: #000; --border: rgba(255,255,255,0.12); }
+        [data-theme="light"] { --bg: #f1f5f9; --panel: #ffffff; --text: #0f172a; --muted: #64748b; --input: #fff; --border: rgba(0,0,0,0.14); }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 15px; }
-        .card { background: #16161e; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 25px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 15px; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 25px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); text-align: center; }
         h2 { font-size: 16px; margin-bottom: 6px; }
-        p { font-size: 12px; color: #94a3b8; margin-bottom: 18px; line-height: 1.6; }
-        input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: #000; color: #10b981; font-size: 16px; text-align: center; letter-spacing: 3px; outline: none; margin-bottom: 12px; }
+        p { font-size: 12px; color: var(--muted); margin-bottom: 18px; line-height: 1.6; }
+        input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--input); color: #10b981; font-size: 16px; text-align: center; letter-spacing: 3px; outline: none; margin-bottom: 12px; }
         input:focus { border-color: #4f46e5; }
-        button { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: bold; font-size: 14px; cursor: pointer; }
-        button:disabled { opacity: 0.5; }
+        button.go { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: bold; font-size: 14px; cursor: pointer; }
+        button.go:disabled { opacity: 0.5; }
         #msg { min-height: 18px; margin-top: 12px; font-size: 12px; color: #ef4444; }
+        .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; }
+        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>نافذة الطوارئ</h2>
-        <p>أدخل المفتاح السري للدخول إلى مدير الملفات.</p>
+        <h2 data-t>🔐 نافذة الطوارئ</h2>
+        <p data-t>أدخل المفتاح السري للدخول إلى مدير الملفات.</p>
         <input id="k" type="password" placeholder="••••" autocomplete="off" autofocus>
-        <button id="b" onclick="go()">دخول</button>
+        <button class="go" id="b" onclick="go()" data-t>دخول</button>
         <div id="msg"></div>
     </div>
+    <div class="fabs">
+        <button class="fab" id="fab-lang" onclick="toggleLang()" aria-label="language">EN</button>
+        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
+    </div>
     <script>
+        const EN = {
+            '🔐 نافذة الطوارئ': '🔐 Emergency access',
+            'أدخل المفتاح السري للدخول إلى مدير الملفات.': 'Enter the secret key to open the file manager.',
+            'دخول': 'Sign in',
+            'محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة': 'Too many attempts, wait a minute and try again',
+            'المفتاح غير صحيح': 'Wrong key',
+            'تعذر الاتصال بالجهاز': 'Cannot reach the device'
+        };
+        const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; };
+        let lang = LS('em_lang') || 'ar', theme = LS('em_theme') || 'dark';
+        function T(s) { return lang === 'en' ? (EN[s] || s) : s; }
+        function applyUi() {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.documentElement.dataset.theme = theme;
+            document.querySelectorAll('[data-t]').forEach(e => { if (!e.dataset.ar) e.dataset.ar = e.textContent.trim(); e.textContent = T(e.dataset.ar); });
+            document.getElementById('fab-lang').textContent = lang === 'ar' ? 'EN' : 'ع';
+            document.getElementById('fab-theme').textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        function toggleLang() { lang = lang === 'ar' ? 'en' : 'ar'; LS('em_lang', lang); applyUi(); }
+        function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; LS('em_theme', theme); applyUi(); }
+        applyUi();
+
         const k = document.getElementById('k'), b = document.getElementById('b'), m = document.getElementById('msg');
         k.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
         async function go() {
@@ -314,8 +384,8 @@ static const char login_html[] PROGMEM = R"rawliteral(
             try {
                 const r = await fetch('/em/check?pass=' + encodeURIComponent(k.value));
                 if (r.ok) { location.href = '/em'; return; }
-                m.innerText = r.status === 429 ? 'محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة' : 'المفتاح غير صحيح';
-            } catch (e) { m.innerText = 'تعذر الاتصال بالجهاز'; }
+                m.innerText = r.status === 429 ? T('محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة') : T('المفتاح غير صحيح');
+            } catch (e) { m.innerText = T('تعذر الاتصال بالجهاز'); }
             b.disabled = false; k.value = ''; k.focus();
         }
     </script>

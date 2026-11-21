@@ -1,5 +1,6 @@
 <script>
   import { api } from '../api.js';
+  import { t } from '../store.svelte.js';
 
   let c = $state({ localhost: '', host: '' });
   let pin = $state('');
@@ -15,19 +16,19 @@
     try {
       await api('/settings/save_comm', c);
       await api('/settings/save_pin', { pin });
-      ok = true; msg = 'تم الحفظ';
-    } catch { ok = false; msg = 'فشل الحفظ'; }
+      ok = true; msg = t('تم الحفظ');
+    } catch { ok = false; msg = t('فشل الحفظ'); }
   }
 </script>
 
 <form class="glass" onsubmit={save}>
-  <h2>الاتصال</h2>
-  <label for="l">المضيف المحلي</label>
+  <h2>🔗 {t('الاتصال')}</h2>
+  <label for="l">{t('المضيف المحلي')}</label>
   <input id="l" bind:value={c.localhost} maxlength="32" />
-  <label for="h">مضيف الإنترنت</label>
+  <label for="h">{t('مضيف الإنترنت')}</label>
   <input id="h" bind:value={c.host} maxlength="32" />
-  <label for="pn">رقم PIN لإعادة الضبط</label>
+  <label for="pn">{t('رقم PIN لإعادة الضبط')}</label>
   <input id="pn" bind:value={pin} maxlength="32" />
-  <div style="margin-top:14px"><button class="btn green">حفظ</button></div>
+  <div style="margin-top:14px"><button class="btn green">{t('حفظ')}</button></div>
   <div class="msg" class:ok class:err={!ok}>{msg}</div>
 </form>
