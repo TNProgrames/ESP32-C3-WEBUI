@@ -82,6 +82,10 @@ static const char index_html[] PROGMEM = R"rawliteral(
                 <button class="btn btn-red" onclick="formatFS()">
                     <svg class="icon" viewBox="0 0 24 24"><path d="M20.37,8.91L19.37,10.64L15.03,8.14L16.03,6.4L18.53,7.85L17.53,6.12L15.8,7.12L14.8,5.38L20,2.38L21,4.11L19.27,5.11L20.27,6.85L22.77,5.4L23.77,7.13L18.57,10.13L20.37,8.91M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg> تهيئة
                 </button>
+                <input type="file" id="ota-input" class="hidden" accept=".bin" onchange="otaFs()">
+                <button class="btn btn-amber" onclick="document.getElementById('ota-input').click()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg> تحديث الواجهة
+                </button>
                 <button class="btn btn-ghost" onclick="logout()">
                     <svg class="icon" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg> خروج
                 </button>
@@ -244,6 +248,24 @@ static const char index_html[] PROGMEM = R"rawliteral(
 
         async function formatFS() {
             if (confirm("تحذير: سيتم مسح الذاكرة بالكامل!")) { await request('/api/format', 'POST'); location.reload(); }
+        }
+
+        // تحديث الواجهة (littlefs.bin) عبر OTA بمفتاح الطوارئ
+        function otaFs() {
+            const inp = document.getElementById('ota-input');
+            const f = inp.files[0];
+            if (!f) return;
+            if (!confirm("تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟")) { inp.value = ''; return; }
+            const st = document.getElementById('storage-txt');
+            const x = new XMLHttpRequest();
+            x.open('POST', '/api/ota?type=fs');
+            x.upload.onprogress = e => { if (e.lengthComputable) st.innerText = 'OTA: ' + Math.round(e.loaded / e.total * 100) + '%'; };
+            x.onload = () => {
+                if (x.status === 200) { st.innerText = 'تم التحديث، يُعاد تشغيل الجهاز...'; setTimeout(() => location.reload(), 12000); }
+                else { alert('فشل التحديث: ' + x.responseText); inp.value = ''; loadFiles(currentPath); }
+            };
+            x.onerror = () => { alert('انقطع الاتصال'); inp.value = ''; };
+            const fd = new FormData(); fd.append('file', f, f.name); x.send(fd);
         }
 
         function logout() { document.cookie = "session_key=; Max-Age=0; path=/;"; location.href = "/"; }
