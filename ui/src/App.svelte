@@ -9,6 +9,7 @@
   import Backup from './lib/Backup.svelte';
   import Terminal from './lib/Terminal.svelte';
   import Ota from './lib/Ota.svelte';
+  import Lab from './lib/Lab.svelte';
   import Toggles from './lib/Toggles.svelte';
 
   let role = $state(session.role);
@@ -21,6 +22,7 @@
     { id: 'pass', icon: '🔑', label: 'كلمات المرور', admin: true },
     { id: 'backup', icon: '💾', label: 'نسخ احتياطي', admin: true },
     { id: 'term', icon: '💻', label: 'الطرفية', admin: true },
+    { id: 'lab', icon: '🧪', label: 'مختبر Lua', admin: true },
     { id: 'ota', icon: '⬆️', label: 'تحديث', admin: true }
   ];
 
@@ -50,6 +52,7 @@
     {:else if tab === 'pass'}<Passwords />
     {:else if tab === 'backup'}<Backup />
     {:else if tab === 'term'}<Terminal />
+    {:else if tab === 'lab'}<Lab />
     {:else if tab === 'ota'}<Ota />
     {/if}
   {/if}

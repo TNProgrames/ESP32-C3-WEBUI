@@ -4,6 +4,11 @@ export const en = {
   'مدير': 'Admin', 'مستخدم': 'User', 'خروج': 'Logout',
   'الحالة': 'Status', 'الواي فاي': 'WiFi', 'الاتصال': 'Connection', 'كلمات المرور': 'Passwords',
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
+  // Lab
+  'مختبر Lua': 'Lua Lab',
+  'اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, print.': 'Write a Lua script and run it on the device. Available: gpio, adc, pwm, timer, sys, print.',
+  'اسم السكريبت': 'Script name', 'أمثلة...': 'Examples...', 'تشغيل': 'Run', 'إيقاف الكل': 'Stop all',
+  'تعذر التشغيل (تحقق من الاسم أو الحجم)': 'Cannot run (check name or size)',
   // Login
   'تسجيل الدخول': 'Sign in', 'المستخدم': 'User', 'كلمة المرور': 'Password', 'دخول': 'Sign in',
   'اسم المستخدم أو كلمة المرور غير صحيحة': 'Wrong username or password',

@@ -26,3 +26,12 @@ export async function api(path, body) {
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
+
+// إرسال نص خام (مثل سكريبت Lua) مع الرمز
+export async function apiRaw(path, text = '') {
+  const res = await fetch(path, { method: 'POST', headers: { User_Token: session.token, User_Role: session.role, 'Content-Type': 'text/plain' }, body: text });
+  if (res.status === 401) { session.clear(); location.reload(); }
+  if (!res.ok) throw new ApiError(res.status);
+  const s = await res.text();
+  return s ? JSON.parse(s) : null;
+}

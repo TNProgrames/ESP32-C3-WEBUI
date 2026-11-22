@@ -8,6 +8,7 @@
 #include <Update.h>
 #include <esp_timer.h>
 #include <stdarg.h>
+#include "lua_engine.h"
 #include "em.h"           // تأكد من تعريف index_html داخل هذا الملف
 #include <string.h>
 
@@ -51,7 +52,7 @@ static char logBuf[LOG_SIZE];
 static uint32_t logTotal = 0;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
 
-static void logPrintf(const char* fmt, ...) {
+void logPrintf(const char* fmt, ...) {
   char tmp[160];
   va_list ap;
   va_start(ap, fmt);
@@ -346,7 +347,10 @@ static String runCommand(String line) {
   arg.trim();
   c.toLowerCase();
 
-  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot";
+  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot\nscripts | run <name> | stop <name|all>";
+  if (c == "scripts") return luaeng_list_text();
+  if (c == "run") return luaeng_run_file(arg.c_str()) ? String("started ") + arg : String("cannot run (need /scripts/") + arg + ".lua)";
+  if (c == "stop") { if (arg == "all") { luaeng_stop_all(); return "stopping all"; } return luaeng_stop(arg.c_str()) ? String("stopping ") + arg : String("invalid name"); }
   if (c == "version") return String("firmware ") + FW_VERSION + "\nchip " + ESP.getChipModel() + " rev " + String(ESP.getChipRevision()) + "\nsdk " + ESP.getSdkVersion();
   if (c == "uptime") return formatUptime(uptimeSec());
   if (c == "heap") return String("free ") + String(ESP.getFreeHeap()) + " / total " + String(ESP.getHeapSize()) + " / min free " + String(ESP.getMinFreeHeap());
@@ -867,6 +871,39 @@ void setupServerWeb() {
     request->send(200, "application/json", o);
   });
 
+  // --- السكريبتات (Lua) ---
+  server.on("/script/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    request->send(200, "application/json", luaeng_list_json());
+  });
+
+  server.on("/script/run", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    // الجسم = نص السكريبت الخام، والاسم في ?name=
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (total == 0 || total > 8192) { if (index == 0) request->send(413); return; }
+    if (index == 0) {
+      request->_tempObject = malloc(total + 1);
+      if (!request->_tempObject) { request->send(500); return; }
+    }
+    char* buf = (char*)request->_tempObject;
+    if (!buf) return;
+    memcpy(buf + index, data, len);
+    if (index + len < total) return;
+    buf[total] = 0;
+    const char* name = request->hasParam("name") ? request->getParam("name")->value().c_str() : "";
+    if (!luaeng_valid_name(name)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
+    bool ok = luaeng_run(name, buf, total);
+    request->send(ok ? 200 : 503, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+
+  server.on("/script/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    bool ok = n == "all" ? (luaeng_stop_all(), true) : luaeng_stop(n.c_str());
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+
   // CORS Options
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);
@@ -882,6 +919,7 @@ void setup() {
   loadsetting();
   EmSetupAPI();
   setupServerWeb();
+  luaeng_begin();
   server.begin();
 }
 
