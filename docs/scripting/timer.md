@@ -1,5 +1,7 @@
 # timer — المؤقتات
 
+> **✅ منفَّذ في v0.4**: `timer.every` و`timer.after` و`timer.cancel`. المؤقتات حتى 8 لكل سكريبت، والأدنى 10ms لـ `every`.
+
 المؤقتات هي أساس عمل السكريبت، فلا يوجد `sleep` ولا حلقات انتظار.
 
 ## `timer.every(ms, fn) → id`
