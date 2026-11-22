@@ -545,6 +545,13 @@
 
 #elif LUA_INT_TYPE == LUA_INT_LONGLONG	/* }{ long long */
 
+/* patched: newlib/xtensa-riscv toolchain may not expose LLONG_MAX here */
+#ifndef LLONG_MAX
+#define LLONG_MAX __LONG_LONG_MAX__
+#define LLONG_MIN (-LLONG_MAX - 1LL)
+#define ULLONG_MAX (LLONG_MAX * 2ULL + 1ULL)
+#endif
+
 /* use presence of macro LLONG_MAX as proxy for C99 compliance */
 #if defined(LLONG_MAX)		/* { */
 /* use ISO C99 stuff */
