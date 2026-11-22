@@ -41,12 +41,15 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build firmware
+      # نفس FW_VERSION لكل خطوات pio، وإلا يعتبره PlatformIO تغيّراً في الإعدادات ويمسح مجلد البناء
+      - name: Set firmware version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            export PLATFORMIO_BUILD_FLAGS="-DFW_VERSION=\\\"$GITHUB_REF_NAME\\\""
-          fi
-          pio run
+          VER="$GITHUB_REF_NAME"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || VER="dev-${GITHUB_SHA::7}"
+          echo "PLATFORMIO_BUILD_FLAGS=-DFW_VERSION=\\\"$VER\\\"" >> "$GITHUB_ENV"
+
+      - name: Build firmware
+        run: pio run
 
       - name: Build LittleFS image (only if data/ exists)
         run: |
