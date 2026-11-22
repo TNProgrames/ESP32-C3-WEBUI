@@ -28,6 +28,10 @@
 | نظام الملفات | LittleFS |
 | المكتبات | ArduinoJson ^7، ESPAsyncWebServer 3.6.0، AsyncTCP 3.3.2 |
 
+## توثيق السكريبت
+
+مسودة تصميم السكريبتات (Lua) في [docs/scripting](docs/scripting/README.md).
+
 ## الواجهة (Svelte)
 
 الواجهة مكتوبة بـ Svelte + Vite في المجلد `ui/`، وتُبنى إلى ملف واحد مضغوط `data/app/index.html.gz` (بضع عشرات من الكيلوبايت).

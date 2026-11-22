@@ -1,0 +1,52 @@
+# الدرايفرات
+
+## القاعدة
+
+- **درايفر بـ Lua:** يكفيه `i2c` وما يشبهها. مناسب لـ OLED وBME280 وADS1115 وغيرها. يوضع في `/scripts/lib/` ويُحمَّل بـ `require`.
+- **درايفر في الفيرموير (C++):** للبروتوكولات الحساسة للتوقيت (DHT وWS2812 والأشعة تحت الحمراء). تحميله يتطلب تحديث الفيرموير.
+
+## الاستعمال
+
+```lua
+--@pins 6,7
+--@needs i2c
+local ssd1306 = require("lib/ssd1306")
+i2c.begin(6, 7, 400000)
+
+local oled = ssd1306.new(0x3C, 128, 64)
+oled:clear()
+oled:text(0, 0, "مرحبا ESP32")
+oled:show()
+```
+
+## كتابة درايفر جديد (هيكل)
+
+```lua
+-- /scripts/lib/mydevice.lua
+local M = {}
+M.__index = M
+
+function M.new(addr)
+  local self = setmetatable({ addr = addr }, M)
+  self:init()
+  return self
+end
+
+function M:init()
+  i2c.write_reg(self.addr, 0x00, 0x01)   -- تسلسل التهيئة حسب ورقة بيانات الجهاز
+end
+
+function M:read()
+  local b = i2c.read_reg(self.addr, 0x10, 2)
+  return (b[1] << 8) | b[2]
+end
+
+return M
+```
+
+## نصائح
+- اقرأ ورقة بيانات الجهاز: عنوان I2C وتسلسل التهيئة ومعنى السجلات.
+- استعمل `string.pack`/`string.unpack` لتحويل البايتات إلى أرقام.
+- اجعل الدرايفر **بلا حالة عامة** وبلا حلقات انتظار.
+- الشاشات: ارسم في ذاكرة وسيطة (framebuffer) ثم أرسلها كلها مرة واحدة في `show()`.
+- لإضافة درايفر C++ جديد للفيرموير أخبرني وأضيفه ثم أجعله متاحًا للسكريبت.
