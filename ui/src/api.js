@@ -35,3 +35,5 @@ export async function apiRaw(path, text = '') {
   const s = await res.text();
   return s ? JSON.parse(s) : null;
 }
+
+export function authHeaders() { return { User_Token: session.token, User_Role: session.role }; }

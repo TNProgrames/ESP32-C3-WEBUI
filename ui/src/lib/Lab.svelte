@@ -1,18 +1,15 @@
 <script>
-  import { api, apiRaw } from '../api.js';
+  import { api, apiRaw, authHeaders } from '../api.js';
   import { t } from '../store.svelte.js';
+  import { examples } from '../examples.js';
 
-  const examples = {
-    'Blink (GPIO8)': `-- يومّض LED على GPIO8 كل 500ms\ngpio.mode(8, "out")\nlocal on = false\ntimer.every(500, function()\n  on = not on\n  gpio.write(8, on)\n  print("led", on)\nend)`,
-    'Hello': `print("hello from Lua", 1 + 2, 10 / 4)\nprint("heap", sys.heap())`,
-    'Timer': `local n = 0\nlocal id\nid = timer.every(1000, function()\n  n = n + 1\n  print("tick", n)\n  if n == 5 then timer.cancel(id) print("done") end\nend)`,
-    'ADC (GPIO0)': `timer.every(1000, function()\n  print("adc", adc.read(0), adc.mv(0) .. " mV")\nend)`,
-    'PWM (GPIO8)': `local d = 0\ntimer.every(50, function()\n  d = (d + 5) % 105\n  pwm.set(8, 1000, d)\nend)`,
-    'Error test': `-- حلقة لا نهائية: يجب أن يوقفها الحارس\nwhile true do end`
-  };
+  let { go = () => {} } = $props();
 
   let name = $state('lab');
-  let code = $state(examples['Blink (GPIO8)']);
+  let code = $state(examples['Blink (GPIO8)'].code);
+  let pagePath = $state('/ui/page.html');
+  let pageHtml = $state('');
+  let showPage = $state(false);
   let list = $state([]);
   let out = $state('');
   let seq = 0;
@@ -37,10 +34,25 @@
     return () => clearInterval(timer);
   });
 
+  async function savePage() {
+    if (!/^\/ui\/[\w.-]+\.html$/.test(pagePath)) throw new Error(t('مسار الصفحة يجب أن يكون /ui/<اسم>.html'));
+    await fetch('/api/mkdir?path=/ui', { method: 'POST', headers: authHeaders() });
+    const r = await fetch('/api/save?path=' + encodeURIComponent(pagePath), {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'content=' + encodeURIComponent(pageHtml)
+    });
+    if (!r.ok) throw new Error(t('تعذر حفظ الصفحة'));
+  }
+
   async function run() {
     busy = true;
-    try { await apiRaw('/script/run?name=' + encodeURIComponent(name.trim()), code); }
-    catch { out += t('تعذر التشغيل (تحقق من الاسم أو الحجم)') + '\n'; }
+    try {
+      if (showPage && pageHtml.trim()) await savePage();
+      await apiRaw('/script/run?name=' + encodeURIComponent(name.trim()), code);
+    } catch (e) {
+      out += (e?.message && !/^HTTP/.test(e.message) ? e.message : t('تعذر التشغيل (تحقق من الاسم أو الحجم)')) + '\n';
+    }
     busy = false;
     setTimeout(refresh, 300);
   }
@@ -48,13 +60,22 @@
     try { await apiRaw('/script/stop?name=' + encodeURIComponent(n)); } catch {}
     setTimeout(refresh, 300);
   }
-  function load(e) { const k = e.target.value; if (k) code = examples[k]; e.target.value = ''; }
+  function load(e) {
+    const k = e.target.value;
+    if (!k) return;
+    const ex = examples[k];
+    code = ex.code;
+    name = k.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase().slice(0, 20) || 'lab';
+    if (ex.page) { pagePath = ex.page.path; pageHtml = ex.page.html; showPage = true; }
+    else { pageHtml = ''; showPage = false; }
+    e.target.value = '';
+  }
 </script>
 
 <div class="glass">
   <h2 style="margin-top:0">🧪 {t('مختبر Lua')}</h2>
   <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-    {t('اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, print.')}
+    {t('اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, ui, print.')}
   </p>
 
   <div class="row" style="margin-bottom:8px">
@@ -68,9 +89,19 @@
   <textarea class="term-input" style="width:100%;min-height:200px;direction:ltr;text-align:left;font-family:monospace"
     bind:value={code} spellcheck="false" autocapitalize="off"></textarea>
 
+  <label class="row" style="margin:10px 0 6px;font-size:13px;gap:8px">
+    <input type="checkbox" style="width:auto" bind:checked={showPage} /> {t('صفحة HTML مخصصة (تُحفظ على الجهاز قبل التشغيل)')}
+  </label>
+  {#if showPage}
+    <input style="direction:ltr;text-align:left;margin-bottom:6px" bind:value={pagePath} spellcheck="false" autocapitalize="off" />
+    <textarea class="term-input" style="width:100%;min-height:180px;direction:ltr;text-align:left;font-family:monospace"
+      bind:value={pageHtml} spellcheck="false" autocapitalize="off"></textarea>
+  {/if}
+
   <div class="row" style="margin:10px 0">
     <button class="btn" onclick={run} disabled={busy}>▶ {t('تشغيل')}</button>
     <button class="btn ghost" onclick={() => stop('all')}>⏹ {t('إيقاف الكل')}</button>
+    <button class="btn ghost" onclick={() => go('panels')}>🪟 {t('اللوحات')}</button>
   </div>
 
   {#if list.length}

@@ -904,6 +904,26 @@ void setupServerWeb() {
     request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
   });
 
+  // --- لوحات الواجهة ---
+  server.on("/ui/panels", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    request->send(200, "application/json", luaeng_ui_panels_json());
+  });
+  server.on("/ui/poll", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    uint32_t since = request->hasParam("since") ? strtoul(request->getParam("since")->value().c_str(), NULL, 10) : 0;
+    request->send(200, "application/json", luaeng_ui_poll_json(since));
+  });
+  server.on("/ui/event", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    if (index != 0 || len != total || total > 46) { request->send(413); return; }
+    if (!request->hasParam("p") || !request->hasParam("n")) { request->send(400); return; }
+    char val[48]; memcpy(val, data, len); val[len] = 0;
+    bool ok = luaeng_ui_event(atoi(request->getParam("p")->value().c_str()), request->getParam("n")->value().c_str(), val);
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+
   // CORS Options
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);

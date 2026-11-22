@@ -207,6 +207,241 @@ static void reg(lua_State* L, const char* tbl, const luaL_Reg* fns) {
   lua_setglobal(L, tbl);
 }
 
+
+// ---------- لوحات الواجهة (UI panels) ----------
+#define MAX_PANELS        6
+#define PANELS_PER_SCRIPT 4
+#define MAX_WIDGETS       40
+#define MAX_MSGS          48
+#define ID_LEN            16
+#define VAL_LEN           48
+
+enum { W_LABEL, W_BUTTON, W_SWITCH, W_SLIDER, W_PROGRESS, W_INPUT, W_COUNT };
+static const char* WTYPES[W_COUNT] = { "label", "button", "switch", "slider", "progress", "input" };
+
+struct Panel  { bool used; uint8_t owner; char title[24]; char page[40]; };
+struct Widget { bool used; uint8_t panel; uint8_t type; char id[ID_LEN]; char label[24]; float mn, mx; char val[VAL_LEN]; };
+struct Msg    { uint32_t seq; uint8_t panel; char name[ID_LEN]; char val[VAL_LEN]; };
+struct UiEv   { uint8_t panel; char name[ID_LEN]; char val[VAL_LEN]; };
+
+static Panel  panels[MAX_PANELS];
+static Widget widgets[MAX_WIDGETS];
+static Msg    msgs[MAX_MSGS];
+static uint32_t msgSeq = 0, uiVer = 1;
+static SemaphoreHandle_t uiMux;
+static QueueHandle_t evQ;
+
+static bool safeName(const char* n, size_t max) {
+  size_t l = strlen(n);
+  if (!l || l >= max) return false;
+  for (size_t i = 0; i < l; i++) {
+    char c = n[i];
+    if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;
+  }
+  return true;
+}
+
+// تحويل قيمة Lua إلى نص JSON (مقتطع ليتسع في cap)
+static void encodeVal(lua_State* L, int idx, char* out, size_t cap) {
+  switch (lua_type(L, idx)) {
+    case LUA_TBOOLEAN: snprintf(out, cap, "%s", lua_toboolean(L, idx) ? "true" : "false"); break;
+    case LUA_TNUMBER:
+      if (lua_isinteger(L, idx)) snprintf(out, cap, "%lld", (long long)lua_tointeger(L, idx));
+      else {
+        double d = (double)lua_tonumber(L, idx);
+        if (d != d || d > 3e38 || d < -3e38) snprintf(out, cap, "null");
+        else snprintf(out, cap, "%.6g", d);
+      }
+      break;
+    case LUA_TSTRING: {
+      size_t l; const char* str = lua_tolstring(L, idx, &l);
+      size_t n = 0; out[n++] = '"';
+      bool cut = false; size_t i = 0;
+      for (; i < l; i++) {
+        unsigned char c = (unsigned char)str[i];
+        char esc[2]; int el;
+        if (c == '"' || c == '\\') { esc[0] = '\\'; esc[1] = (char)c; el = 2; }
+        else if (c < 0x20) { esc[0] = ' '; el = 1; }
+        else { esc[0] = (char)c; el = 1; }
+        if (n + el > cap - 2) { cut = true; break; }
+        for (int k = 0; k < el; k++) out[n++] = esc[k];
+      }
+      if (cut && (((unsigned char)str[i]) & 0xC0) == 0x80) {   // لا نقطع حرف UTF-8 في المنتصف
+        while (n > 1 && (((unsigned char)out[n - 1]) & 0xC0) == 0x80) n--;
+        if (n > 1 && (((unsigned char)out[n - 1]) & 0xC0) == 0xC0) n--;
+      }
+      out[n++] = '"'; out[n] = 0;
+      break;
+    }
+    default: snprintf(out, cap, "null");
+  }
+}
+
+static void pushMsg(uint8_t panel, const char* name, const char* val) {
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  int slot = -1; uint32_t oldest = 0xFFFFFFFF;
+  for (int i = 0; i < MAX_MSGS; i++) {
+    if (msgs[i].seq && msgs[i].panel == panel && !strcmp(msgs[i].name, name)) msgs[i].seq = 0;   // القيمة الأحدث تحل محل القديمة
+  }
+  for (int i = 0; i < MAX_MSGS; i++) {
+    if (msgs[i].seq == 0) { slot = i; break; }
+    if (msgs[i].seq < oldest) { oldest = msgs[i].seq; slot = i; }
+  }
+  Msg& m = msgs[slot];
+  m.seq = ++msgSeq; m.panel = panel;
+  strncpy(m.name, name, ID_LEN - 1); m.name[ID_LEN - 1] = 0;
+  strncpy(m.val, val, VAL_LEN - 1); m.val[VAL_LEN - 1] = 0;
+  xSemaphoreGive(uiMux);
+}
+
+static void uiDrop(int slot) {
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  for (int i = 0; i < MAX_PANELS; i++) if (panels[i].used && panels[i].owner == slot) {
+    panels[i].used = false;
+    for (auto& w : widgets) if (w.used && w.panel == i) w.used = false;
+    for (auto& m : msgs) if (m.seq && m.panel == i) m.seq = 0;
+  }
+  uiVer++;
+  xSemaphoreGive(uiMux);
+}
+
+static int ownedPanel(lua_State* L, int arg) {
+  int i = (int)luaL_checkinteger(L, arg);
+  if (i < 0 || i >= MAX_PANELS || !panels[i].used || panels[i].owner != idxOf(me(L))) luaL_error(L, "invalid panel");
+  return i;
+}
+
+static int l_ui_new(lua_State* L) {
+  Script* s = me(L);
+  const char* title = luaL_checkstring(L, 1);
+  int mine = 0, slot = -1;
+  for (int i = 0; i < MAX_PANELS; i++) {
+    if (panels[i].used && panels[i].owner == idxOf(s)) mine++;
+    if (!panels[i].used && slot < 0) slot = i;
+  }
+  if (mine >= PANELS_PER_SCRIPT) return luaL_error(L, "too many panels (max %d per script)", PANELS_PER_SCRIPT);
+  if (slot < 0) return luaL_error(L, "no free panel (max %d total)", MAX_PANELS);
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  panels[slot].used = true; panels[slot].owner = idxOf(s);
+  strncpy(panels[slot].title, title, sizeof(panels[slot].title) - 1); panels[slot].title[sizeof(panels[slot].title) - 1] = 0;
+  panels[slot].page[0] = 0;
+  uiVer++;
+  xSemaphoreGive(uiMux);
+  lua_pushinteger(L, slot);
+  return 1;
+}
+
+// ui._w(panel, type, id, label, min, max, step, value)
+static int l_ui_w(lua_State* L) {
+  int pi = ownedPanel(L, 1);
+  const char* ty = luaL_checkstring(L, 2);
+  const char* id = luaL_checkstring(L, 3);
+  const char* label = luaL_optstring(L, 4, "");
+  float mn = (float)luaL_optnumber(L, 5, 0), mx = (float)luaL_optnumber(L, 6, 100);
+  int type = -1;
+  for (int i = 0; i < W_COUNT; i++) if (!strcmp(ty, WTYPES[i])) type = i;
+  if (type < 0) return luaL_error(L, "unknown widget type");
+  if (!safeName(id, ID_LEN)) return luaL_error(L, "bad widget id (letters, digits, _ -; max %d)", ID_LEN - 1);
+  char val[VAL_LEN]; encodeVal(L, 8, val, sizeof(val));
+  int slot = -1, freeSlot = -1;
+  for (int i = 0; i < MAX_WIDGETS; i++) {
+    if (widgets[i].used && widgets[i].panel == pi && !strcmp(widgets[i].id, id)) slot = i;
+    if (!widgets[i].used && freeSlot < 0) freeSlot = i;
+  }
+  if (slot < 0) slot = freeSlot;
+  if (slot < 0) return luaL_error(L, "too many widgets (max %d)", MAX_WIDGETS);
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  Widget& w = widgets[slot];
+  w.used = true; w.panel = pi; w.type = type; w.mn = mn; w.mx = mx;
+  strncpy(w.id, id, ID_LEN - 1); w.id[ID_LEN - 1] = 0;
+  strncpy(w.label, label, sizeof(w.label) - 1); w.label[sizeof(w.label) - 1] = 0;
+  strcpy(w.val, val);
+  uiVer++;
+  xSemaphoreGive(uiMux);
+  return 0;
+}
+
+// ui._set(panel, id, value): يحدّث أداة (إن وُجدت) ويبثّ القيمة للواجهة
+static int l_ui_set(lua_State* L) {
+  int pi = ownedPanel(L, 1);
+  const char* id = luaL_checkstring(L, 2);
+  if (!safeName(id, ID_LEN)) return luaL_error(L, "bad id");
+  char val[VAL_LEN]; encodeVal(L, 3, val, sizeof(val));
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  for (auto& w : widgets) if (w.used && w.panel == pi && !strcmp(w.id, id)) strcpy(w.val, val);
+  xSemaphoreGive(uiMux);
+  pushMsg(pi, id, val);
+  return 0;
+}
+
+static int l_ui_emit(lua_State* L) {
+  int pi = ownedPanel(L, 1);
+  const char* n = luaL_checkstring(L, 2);
+  if (!safeName(n, ID_LEN)) return luaL_error(L, "bad event name (letters, digits, _ -; max %d)", ID_LEN - 1);
+  char val[VAL_LEN]; encodeVal(L, 3, val, sizeof(val));
+  pushMsg(pi, n, val);
+  return 0;
+}
+
+// ui._page(panel, path): الملف يجب أن يكون تحت /ui/ وبامتداد .html
+static int l_ui_page(lua_State* L) {
+  int pi = ownedPanel(L, 1);
+  const char* path = luaL_checkstring(L, 2);
+  if (path[0] == '/') path++;
+  size_t l = strlen(path);
+  bool ok = l > 8 && l < 38 && !strncmp(path, "ui/", 3) && (!strcmp(path + l - 5, ".html"));
+  for (size_t i = 0; ok && i < l; i++) {
+    char c = path[i];
+    if (!(isalnum((unsigned char)c) || c == '_' || c == '-' || c == '.' || c == '/')) ok = false;
+  }
+  if (ok && strstr(path, "..")) ok = false;
+  if (!ok) return luaL_error(L, "page must be ui/<name>.html");
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  snprintf(panels[pi].page, sizeof(panels[pi].page), "/%s", path);
+  uiVer++;
+  xSemaphoreGive(uiMux);
+  return 0;
+}
+
+// طبقة Lua فوق الدوال الأساسية: كائن اللوحة والأدوات والأحداث
+static const char UI_PRELUDE[] = R"LUA(
+local U = {}
+U.__index = U
+local H = {}
+local f_new, f_w, f_set, f_page, f_emit = ui._new, ui._w, ui._set, ui._page, ui._emit
+ui._new, ui._w, ui._set, ui._page, ui._emit = nil, nil, nil, nil, nil
+function ui.panel(title)
+  local i = f_new(tostring(title or "panel"))
+  H[i] = {}
+  return setmetatable({ i = i }, U)
+end
+function U:page(path) f_page(self.i, path) return self end
+function U:emit(n, v) f_emit(self.i, n, v) return self end
+function U:on(n, fn) H[self.i][n] = fn return self end
+function U:set(id, v) f_set(self.i, id, v) return self end
+function U:label(id, text) f_w(self.i, "label", id, "", 0, 0, 0, text or "") return self end
+function U:button(id, text, fn) f_w(self.i, "button", id, text or id, 0, 0, 0, nil) if fn then self:on(id, fn) end return self end
+function U:switch(id, text, fn, init) f_w(self.i, "switch", id, text or id, 0, 0, 0, init and true or false) if fn then self:on(id, fn) end return self end
+function U:slider(id, text, min, max, fn, init) f_w(self.i, "slider", id, text or id, min or 0, max or 100, 0, init or min or 0) if fn then self:on(id, fn) end return self end
+function U:progress(id, text, v) f_w(self.i, "progress", id, text or id, 0, 100, 0, v or 0) return self end
+function U:input(id, text, fn, init) f_w(self.i, "input", id, text or id, 0, 0, 0, init or "") if fn then self:on(id, fn) end return self end
+function __ui_dispatch(i, n, v)
+  local h = H[i] and H[i][n]
+  if h then h(v) end
+end
+)LUA";
+
+static void pushJsonValue(lua_State* L, const char* json) {
+  JsonDocument d;
+  if (deserializeJson(d, json)) { lua_pushnil(L); return; }
+  JsonVariantConst v = d.as<JsonVariantConst>();
+  if (v.is<bool>()) lua_pushboolean(L, v.as<bool>());
+  else if (v.is<long>()) lua_pushinteger(L, v.as<long>());
+  else if (v.is<float>()) lua_pushnumber(L, v.as<float>());
+  else if (v.is<const char*>()) lua_pushstring(L, v.as<const char*>());
+  else lua_pushnil(L);
+}
+
 // ---------- دورة حياة السكريبت ----------
 static void setStatus(Script* s, uint8_t st, const char* err) {
   xSemaphoreTake(statusMux, portMAX_DELAY);
@@ -222,6 +457,7 @@ static void releaseResources(Script* s) {
     pinMode(p, INPUT);
     pinOwner[p] = 0;
   }
+  uiDrop(idxOf(s));
   if (s->L) { lua_close(s->L); s->L = nullptr; }
   s->mem = 0;
   memset(s->timers, 0, sizeof(s->timers));
@@ -281,7 +517,12 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg pwmF[]  = { {"set", l_pwm_set}, {NULL, NULL} };
   static const luaL_Reg timF[]  = { {"every", l_timer_every}, {"after", l_timer_after}, {"cancel", l_timer_cancel}, {NULL, NULL} };
   static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {NULL, NULL} };
-  reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF);
+  static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
+  reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
+  if (luaL_loadbufferx(L, UI_PRELUDE, sizeof(UI_PRELUDE) - 1, "=ui", "t") != LUA_OK || !protectedCall(s, 0)) {
+    if (s->state == ST_RUN) { const char* m = lua_tostring(L, -1); failScript(s, m ? m : "ui init failed"); }
+    return;
+  }
 
   lua_sethook(L, hook, LUA_MASKCOUNT, 5000);
   s->deadline = millis() + CALL_BUDGET;
@@ -305,6 +546,23 @@ static void tickScript(Script* s) {
   }
 }
 
+static void handleEvent(const UiEv& e) {
+  if (e.panel >= MAX_PANELS || !panels[e.panel].used) return;
+  Script* s = &scripts[panels[e.panel].owner];
+  if (s->state != ST_RUN || !s->L) return;
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  for (auto& w : widgets) if (w.used && w.panel == e.panel && !strcmp(w.id, e.name) &&
+      (w.type == W_SWITCH || w.type == W_SLIDER || w.type == W_INPUT)) strcpy(w.val, e.val);
+  xSemaphoreGive(uiMux);
+  lua_State* L = s->L;
+  lua_getglobal(L, "__ui_dispatch");
+  if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return; }
+  lua_pushinteger(L, e.panel);
+  lua_pushstring(L, e.name);
+  pushJsonValue(L, e.val);
+  protectedCall(s, 3);
+}
+
 static void engineTask(void*) {
   Cmd c;
   for (;;) {
@@ -316,8 +574,9 @@ static void engineTask(void*) {
       } else if (c.type == C_STOPALL) {
         for (auto& s : scripts) if (s.state != ST_FREE) killScript(&s);
       }
-      continue;
     }
+    UiEv ev;
+    while (xQueueReceive(evQ, &ev, 0) == pdTRUE) handleEvent(ev);
     for (auto& s : scripts) if (s.state == ST_RUN) tickScript(&s);
     // تحديث حالة الذاكرة للعرض
   }
@@ -326,7 +585,9 @@ static void engineTask(void*) {
 // ---------- الواجهة العامة ----------
 void luaeng_begin() {
   statusMux = xSemaphoreCreateMutex();
+  uiMux = xSemaphoreCreateMutex();
   cmdQ = xQueueCreate(4, sizeof(Cmd));
+  evQ = xQueueCreate(8, sizeof(UiEv));
   xTaskCreate(engineTask, "lua", 16384, NULL, 2, NULL);
 }
 
@@ -389,4 +650,61 @@ String luaeng_list_json() {
   xSemaphoreGive(statusMux);
   String out; serializeJson(d, out);
   return out;
+}
+
+// ---------- واجهة HTTP للوحات ----------
+String luaeng_ui_panels_json() {
+  JsonDocument d;
+  JsonObject root = d.to<JsonObject>();
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  root["ver"] = uiVer;
+  JsonArray ps = root["panels"].to<JsonArray>();
+  for (int i = 0; i < MAX_PANELS; i++) if (panels[i].used) {
+    JsonObject po = ps.add<JsonObject>();
+    po["id"] = i;
+    po["script"] = scripts[panels[i].owner].name;
+    po["title"] = panels[i].title;
+    if (panels[i].page[0]) po["page"] = panels[i].page;
+    JsonArray ws = po["widgets"].to<JsonArray>();
+    for (auto& w : widgets) if (w.used && w.panel == i) {
+      JsonObject wo = ws.add<JsonObject>();
+      wo["id"] = w.id;
+      wo["type"] = WTYPES[w.type];
+      wo["label"] = w.label;
+      wo["min"] = w.mn;
+      wo["max"] = w.mx;
+      wo["value"] = serialized(w.val);
+    }
+  }
+  String out; serializeJson(d, out);
+  xSemaphoreGive(uiMux);
+  return out;
+}
+
+String luaeng_ui_poll_json(uint32_t since) {
+  int idx[MAX_MSGS]; int n = 0;
+  String o;
+  xSemaphoreTake(uiMux, portMAX_DELAY);
+  for (int i = 0; i < MAX_MSGS; i++) if (msgs[i].seq > since) {
+    int k = n++;
+    while (k > 0 && msgs[idx[k - 1]].seq > msgs[i].seq) { idx[k] = idx[k - 1]; k--; }
+    idx[k] = i;
+  }
+  o.reserve(64 + n * 80);
+  o = String("{\"seq\":") + String((unsigned)msgSeq) + ",\"ver\":" + String((unsigned)uiVer) + ",\"msgs\":[";
+  for (int k = 0; k < n; k++) {
+    char b[110];
+    snprintf(b, sizeof(b), "%s{\"p\":%u,\"n\":\"%s\",\"v\":%s}", k ? "," : "", (unsigned)msgs[idx[k]].panel, msgs[idx[k]].name, msgs[idx[k]].val);
+    o += b;
+  }
+  o += "]}";
+  xSemaphoreGive(uiMux);
+  return o;
+}
+
+bool luaeng_ui_event(int panel, const char* name, const char* valJson) {
+  if (panel < 0 || panel >= MAX_PANELS || !safeName(name, ID_LEN) || strlen(valJson) >= VAL_LEN) return false;
+  UiEv e = {}; e.panel = panel;
+  strncpy(e.name, name, ID_LEN - 1); strncpy(e.val, valJson, VAL_LEN - 1);
+  return xQueueSend(evQ, &e, 0) == pdTRUE;
 }

@@ -12,5 +12,10 @@ String luaeng_list_text();                // عرض نصي للطرفية
 String luaeng_list_json();                // JSON للواجهة
 bool luaeng_valid_name(const char* name);
 
+// لوحات الواجهة: تعريفها JSON، وتحديثاتها عبر الاستطلاع، وأحداث المستخدم تُرسل للسكريبت
+String luaeng_ui_panels_json();
+String luaeng_ui_poll_json(uint32_t since);
+bool luaeng_ui_event(int panel, const char* name, const char* valJson);
+
 // يُنفَّذ في main.cpp
 void logPrintf(const char* fmt, ...);

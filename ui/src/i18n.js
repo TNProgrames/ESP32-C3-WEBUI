@@ -6,7 +6,12 @@ export const en = {
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Lab
   'مختبر Lua': 'Lua Lab',
-  'اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, print.': 'Write a Lua script and run it on the device. Available: gpio, adc, pwm, timer, sys, print.',
+  'اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, ui, print.': 'Write a Lua script and run it on the device. Available: gpio, adc, pwm, timer, sys, ui, print.',
+  'اللوحات': 'Panels', 'لا توجد لوحات الآن': 'No panels right now',
+  'اللوحات التي تنشئها السكريبتات بـ ui.panel(...). شغّل مثالًا من تبويب المختبر لتظهر هنا.': 'Panels created by scripts with ui.panel(...). Run an example from the Lab tab to see them here.',
+  'صفحة HTML مخصصة (تُحفظ على الجهاز قبل التشغيل)': 'Custom HTML page (saved to the device before running)',
+  'مسار الصفحة يجب أن يكون /ui/<اسم>.html': 'Page path must be /ui/<name>.html',
+  'تعذر حفظ الصفحة': 'Could not save the page', 'تعذر تحميل الصفحة': 'Could not load the page',
   'اسم السكريبت': 'Script name', 'أمثلة...': 'Examples...', 'تشغيل': 'Run', 'إيقاف الكل': 'Stop all',
   'تعذر التشغيل (تحقق من الاسم أو الحجم)': 'Cannot run (check name or size)',
   // Login
