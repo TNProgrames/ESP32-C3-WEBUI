@@ -12,6 +12,7 @@ extern "C" {
 #include "lauxlib.h"
 #include "lualib.h"
 }
+#include "lua_fb.h"
 
 // ---------- حدود ----------
 #define MAX_SCRIPTS   3
@@ -649,6 +650,7 @@ static void startScript(const char* name, const char* code, size_t len) {
                                     {"write_read", l_i2c_write_read}, {"write_reg", l_i2c_write_reg}, {"read_reg", l_i2c_read_reg}, {NULL, NULL} };
   reg(L, "storage", stoF); reg(L, "bus", busF); reg(L, "i2c", i2cF);
   lua_pushcfunction(L, l_require); lua_setglobal(L, "require");
+  luaeng_fb_register(L);
   reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
   if (luaL_loadbufferx(L, UI_PRELUDE, sizeof(UI_PRELUDE) - 1, "=ui", "t") != LUA_OK || !protectedCall(s, 0)) {
     if (s->state == ST_RUN) { const char* m = lua_tostring(L, -1); failScript(s, m ? m : "ui init failed"); }

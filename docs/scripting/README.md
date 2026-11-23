@@ -14,6 +14,7 @@
 | `sys` / `print` / `log` | ✅ | `sys.millis` `uptime` `heap` `version` وكذلك `print` و`log` |
 | `storage` | ✅ | مخزن دائم لكل سكريبت (2KB) |
 | `bus` | ✅ | نشر/اشتراك بين السكريبتات |
+| `fb` | ✅ | `new` ثم `clear line rect circle bar text page data` (إطار 1 بت) |
 | `i2c` | ✅ | `begin` `scan` `write` `read` `write_read` `write_reg` `read_reg` `stop` |
 | `spi` `uart` | 🕒 | مخطّط |
 | `rmt` `pulse` وبروتوكولات التوقيت | 🕒 | مخطّط |
@@ -39,7 +40,8 @@
 | [i2c.md](i2c.md) | ناقل I2C (منفَّذ) |
 | [spi.md](spi.md) · [uart.md](uart.md) | الناقلات (مخطّطة) |
 | [timing.md](timing.md) | البروتوكولات الحساسة للتوقيت (مخطّط) |
-| [drivers.md](drivers.md) | `require` والدرايفرات |
+| [drivers.md](drivers.md) | `require` والدرايفرات (ssd1306, bme280) |
+| [fb.md](fb.md) | إطار الرسم `fb` |
 
 ## القاعدة الذهبية
 

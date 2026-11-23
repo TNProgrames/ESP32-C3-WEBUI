@@ -1,6 +1,6 @@
 # الدرايفرات
 
-> **✅ `require` منفَّذ (v0.7)**، و**🕒 الدرايفرات الجاهزة (SSD1306 وBME280...) قيد التنفيذ.**  يمكنك كتابة درايفرك بنفسك الآن فوق `i2c`.
+> **✅ `require` منفَّذ، و✅ سائقان جاهزان: `ssd1306` (شاشة OLED) و`bme280` (حرارة/ضغط/رطوبة).** ثبّتهما بزر «⬇️ تثبيت السائقات» في بطاقة المكتبات بالمختبر.
 
 ## القاعدة
 
@@ -10,16 +10,19 @@
 ## الاستعمال
 
 ```lua
---@pins 6,7
---@needs i2c
-local ssd1306 = require("lib/ssd1306")
-i2c.begin(6, 7, 400000)
-
-local oled = ssd1306.new(0x3C, 128, 64)
+i2c.begin(8, 9, 400000)
+local oled = require("ssd1306").new({w = 128, h = 64})   -- addr=0x3C، sh1106=true لشاشات SH1106
 oled:clear()
-oled:text(0, 0, "مرحبا ESP32")
-oled:show()
+oled:text(0, 0, "Hello", 2)
+oled:show()                                              -- يرسل الإطار (1KB) للشاشة
+
+local s = require("bme280").new()                        -- addr=0x76 (أو {addr=0x77})
+local r = s:read()                                       -- {temp=°C, press=Pa, hum=% أو nil مع BMP280}
 ```
+
+- `ssd1306`: كل دوال `fb` متاحة عليه (`clear line rect circle bar text pixel ...`) إضافة إلى `show contrast(0..255) power(bool) invert_display(bool) flip(bool)`.
+- `bme280`: يتعرف على BMP280 (بلا رطوبة) تلقائيًا؛ الأخطاء تعيد `nil, "nack_addr"|"bad_id"|...`.
+- تحقق على الحاسوب: قيم ورقة بيانات Bosch (25.08°C، 100653Pa) صحيحة. لم تُجرَّب بعد على عتاد حقيقي.
 
 ## كتابة درايفر جديد (هيكل)
 

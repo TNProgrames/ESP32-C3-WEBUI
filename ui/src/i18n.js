@@ -24,7 +24,7 @@ export const en = {
   'تشغيل تلقائي عند إقلاع الجهاز': 'Run automatically at device boot',
   // Lab: libraries
   'حفظ كمكتبة (require) بدل التشغيل': 'Save as library (require) instead of running', 'حفظ المكتبة': 'Save library', 'حُفظت المكتبة': 'Library saved',
-  'المكتبات': 'Libraries', 'حذف المكتبة': 'Delete library',
+  'المكتبات': 'Libraries', 'تثبيت السائقات': 'Install drivers', 'تم تثبيت السائقات': 'Drivers installed', 'تعذر التثبيت': 'Install failed', 'حذف المكتبة': 'Delete library',
   'لا توجد مكتبات. فعّل «حفظ كمكتبة» واحفظ ملفًا ثم استعمله بـ require.': 'No libraries. Enable "Save as library", save a file, then use it with require.',
   // Login
   'تسجيل الدخول': 'Sign in', 'المستخدم': 'User', 'كلمة المرور': 'Password', 'دخول': 'Sign in',
