@@ -27,9 +27,9 @@ export async function api(path, body) {
   return text ? JSON.parse(text) : null;
 }
 
-// إرسال نص خام (مثل سكريبت Lua) مع الرمز
+// إرسال نص خام (مثل سكريبت Lua) مع الرمز. لا نستعمل text/plain: المكتبة تعتبر الجسم الذي يحوي = نموذجًا (form) فلا يصل للمعالج (خطأ 501)
 export async function apiRaw(path, text = '') {
-  const res = await fetch(path, { method: 'POST', headers: { User_Token: session.token, User_Role: session.role, 'Content-Type': 'text/plain' }, body: text });
+  const res = await fetch(path, { method: 'POST', headers: { User_Token: session.token, User_Role: session.role, 'Content-Type': 'application/octet-stream' }, body: text });
   if (res.status === 401) { session.clear(); location.reload(); }
   if (!res.ok) throw new ApiError(res.status);
   const s = await res.text();
