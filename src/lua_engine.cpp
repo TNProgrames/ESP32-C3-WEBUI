@@ -546,6 +546,86 @@ static void tickScript(Script* s) {
   }
 }
 
+
+// ---------- حفظ السكريبتات والتشغيل التلقائي ----------
+#define SCRIPTS_DIR "/scripts"
+#define AUTO_FILE   "/scripts/autorun.txt"
+#define BOOT_FILE   "/scripts/.boot"
+
+static uint32_t bootClearAt = 0;
+
+static String readText(const String& p) {
+  File f = LittleFS.open(p, "r");
+  if (!f || f.isDirectory()) return String("");
+  String s = f.readString();
+  f.close();
+  return s;
+}
+static bool writeText(const String& p, const String& s) {
+  File f = LittleFS.open(p, "w");
+  if (!f) return false;
+  size_t w = f.print(s);
+  f.close();
+  return w == s.length();
+}
+static void ensureDir() { if (!LittleFS.exists(SCRIPTS_DIR)) LittleFS.mkdir(SCRIPTS_DIR); }
+static bool autoHas(const String& list, const char* name) {
+  int i = 0, n = (int)list.length();
+  while (i < n) {
+    int j = list.indexOf('\n', i);
+    if (j < 0) j = n;
+    String l = list.substring(i, j);
+    l.trim();
+    if (l == name) return true;
+    i = j + 1;
+  }
+  return false;
+}
+static char* loadFile(const char* name, size_t* len) {
+  String p = String(SCRIPTS_DIR) + "/" + name + ".lua";
+  File f = LittleFS.open(p, "r");
+  if (!f || f.isDirectory() || f.size() == 0 || f.size() > MAX_CODE) return nullptr;
+  size_t n = f.size();
+  char* buf = (char*)malloc(n + 1);
+  if (!buf) return nullptr;
+  size_t r = f.read((uint8_t*)buf, n);
+  buf[r] = 0;
+  *len = r;
+  return buf;
+}
+
+// عند الإقلاع: يشغّل السكريبتات المعلَّمة تلقائيًا. 3 إقلاعات متتالية خلال 30 ثانية = حلقة انهيار → تُعطَّل كل العلامات
+static void autorunBoot() {
+  String list = readText(AUTO_FILE);
+  list.trim();
+  if (!list.length()) return;
+  int n = readText(BOOT_FILE).toInt();
+  if (n >= 3) {
+    logPrintf("autorun disabled: %d quick reboots in a row\n", n);
+    writeText(AUTO_FILE, "");
+    writeText(BOOT_FILE, "0");
+    return;
+  }
+  writeText(BOOT_FILE, String(n + 1));
+  bootClearAt = millis() + 30000;
+  int started = 0, i = 0, len = (int)list.length();
+  while (i < len && started < MAX_SCRIPTS) {
+    int j = list.indexOf('\n', i);
+    if (j < 0) j = len;
+    String name = list.substring(i, j);
+    i = j + 1;
+    name.trim();
+    if (!luaeng_valid_name(name.c_str())) continue;
+    size_t l = 0;
+    char* buf = loadFile(name.c_str(), &l);
+    if (!buf) { logPrintf("autorun: cannot read %s\n", name.c_str()); continue; }
+    logPrintf("autorun %s\n", name.c_str());
+    startScript(name.c_str(), buf, l);
+    free(buf);
+    started++;
+  }
+}
+
 static void handleEvent(const UiEv& e) {
   if (e.panel >= MAX_PANELS || !panels[e.panel].used) return;
   Script* s = &scripts[panels[e.panel].owner];
@@ -565,7 +645,10 @@ static void handleEvent(const UiEv& e) {
 
 static void engineTask(void*) {
   Cmd c;
+  vTaskDelay(pdMS_TO_TICKS(2500));   // أمهل الواي فاي والخادم قبل تشغيل السكريبتات التلقائية
+  autorunBoot();
   for (;;) {
+    if (bootClearAt && (int32_t)(millis() - bootClearAt) >= 0) { bootClearAt = 0; writeText(BOOT_FILE, "0"); }
     if (xQueueReceive(cmdQ, &c, pdMS_TO_TICKS(10)) == pdTRUE) {
       if (c.type == C_RUN) { startScript(c.name, c.code, c.len); free(c.code); }
       else if (c.type == C_STOP) {
@@ -707,4 +790,73 @@ bool luaeng_ui_event(int panel, const char* name, const char* valJson) {
   UiEv e = {}; e.panel = panel;
   strncpy(e.name, name, ID_LEN - 1); strncpy(e.val, valJson, VAL_LEN - 1);
   return xQueueSend(evQ, &e, 0) == pdTRUE;
+}
+
+bool luaeng_save(const char* name, const char* code, size_t len, const char* page) {
+  if (!luaeng_valid_name(name) || len == 0 || len > MAX_CODE) return false;
+  ensureDir();
+  File f = LittleFS.open(String(SCRIPTS_DIR) + "/" + name + ".lua", "w");
+  if (!f) return false;
+  size_t w = f.write((const uint8_t*)code, len);
+  f.close();
+  if (w != len) return false;
+  String pp = String(SCRIPTS_DIR) + "/" + name + ".page";
+  if (page && *page) writeText(pp, String(page));
+  else if (LittleFS.exists(pp)) LittleFS.remove(pp);
+  return true;
+}
+
+bool luaeng_set_auto(const char* name, bool on) {
+  if (!luaeng_valid_name(name)) return false;
+  ensureDir();
+  String list = readText(AUTO_FILE), out;
+  int i = 0, n = (int)list.length();
+  while (i < n) {
+    int j = list.indexOf('\n', i);
+    if (j < 0) j = n;
+    String l = list.substring(i, j);
+    i = j + 1;
+    l.trim();
+    if (l.length() && l != name) out += l + "\n";
+  }
+  if (on) out += String(name) + "\n";
+  return writeText(AUTO_FILE, out);
+}
+
+bool luaeng_delete(const char* name) {
+  if (!luaeng_valid_name(name)) return false;
+  luaeng_stop(name);
+  luaeng_set_auto(name, false);
+  String b = String(SCRIPTS_DIR) + "/" + name;
+  if (LittleFS.exists(b + ".lua")) LittleFS.remove(b + ".lua");
+  if (LittleFS.exists(b + ".page")) LittleFS.remove(b + ".page");
+  return true;
+}
+
+String luaeng_files_json() {
+  JsonDocument d;
+  JsonArray a = d.to<JsonArray>();
+  String list = readText(AUTO_FILE);
+  File dir = LittleFS.open(SCRIPTS_DIR);
+  if (dir && dir.isDirectory()) {
+    File f = dir.openNextFile();
+    while (f) {
+      String n = f.name();
+      if (!f.isDirectory() && n.endsWith(".lua")) {
+        n = n.substring(0, n.length() - 4);
+        if (luaeng_valid_name(n.c_str())) {
+          JsonObject o = a.add<JsonObject>();
+          o["name"] = n;
+          o["size"] = (uint32_t)f.size();
+          o["auto"] = autoHas(list, n.c_str());
+          String pg = readText(String(SCRIPTS_DIR) + "/" + n + ".page");
+          pg.trim();
+          if (pg.length()) o["page"] = pg;
+        }
+      }
+      f = dir.openNextFile();
+    }
+  }
+  String out; serializeJson(d, out);
+  return out;
 }

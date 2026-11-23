@@ -14,6 +14,14 @@ export const en = {
   'تعذر حفظ الصفحة': 'Could not save the page', 'تعذر تحميل الصفحة': 'Could not load the page',
   'اسم السكريبت': 'Script name', 'أمثلة...': 'Examples...', 'تشغيل': 'Run', 'إيقاف الكل': 'Stop all',
   'تعذر التشغيل (تحقق من الاسم أو الحجم)': 'Cannot run (check name or size)',
+  // Lab (v0.5)
+  'حفظ وتشغيل': 'Save & run', 'السكريبتات المحفوظة': 'Saved scripts', 'تنظيف': 'Clear',
+  'لا توجد سكريبتات محفوظة بعد. «حفظ وتشغيل» يخزّن الملف على الجهاز.': 'No saved scripts yet. "Save & run" stores the file on the device.',
+  'اسم السكريبت: حروف إنجليزية وأرقام و _ و - فقط (حتى 23)': 'Script name: English letters, digits, _ and - only (max 23)',
+  'السكريبت فارغ': 'The script is empty', 'تعذر الإيقاف': 'Could not stop', 'تعذر التشغيل': 'Could not run', 'تعذر الحفظ': 'Could not save',
+  'تعذر الحذف': 'Could not delete', 'تعذر فتح الملف': 'Could not open the file', 'حذف السكريبت': 'Delete script',
+  'تشغيل': 'Run', 'إيقاف': 'Stop', 'تعديل': 'Edit', 'حذف': 'Delete',
+  'تشغيل تلقائي عند إقلاع الجهاز': 'Run automatically at device boot',
   // Login
   'تسجيل الدخول': 'Sign in', 'المستخدم': 'User', 'كلمة المرور': 'Password', 'دخول': 'Sign in',
   'اسم المستخدم أو كلمة المرور غير صحيحة': 'Wrong username or password',

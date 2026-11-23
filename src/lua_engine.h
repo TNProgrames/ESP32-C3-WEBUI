@@ -7,6 +7,11 @@ void luaeng_begin();
 bool luaeng_run(const char* name, const char* code, size_t len);
 bool luaeng_run_file(const char* name);   // يقرأ /scripts/<name>.lua
 bool luaeng_stop(const char* name);
+// حفظ السكريبت كملف /scripts/<name>.lua (مع مسار صفحته اختياريًا) والتشغيل التلقائي عند الإقلاع
+bool luaeng_save(const char* name, const char* code, size_t len, const char* page);
+bool luaeng_set_auto(const char* name, bool on);
+bool luaeng_delete(const char* name);
+String luaeng_files_json();
 void luaeng_stop_all();
 String luaeng_list_text();                // عرض نصي للطرفية
 String luaeng_list_json();                // JSON للواجهة

@@ -550,6 +550,16 @@ void EmSetupAPI() {
 
 // --- Main Application Web APIs ---
 
+// مسار صفحة اللوحة: /ui/<name>.html بأحرف آمنة فقط
+static bool validUiPage(const String& p) {
+  if (p.length() < 9 || p.length() > 39 || !p.startsWith("/ui/") || !p.endsWith(".html") || p.indexOf("..") >= 0) return false;
+  for (size_t i = 0; i < p.length(); i++) {
+    char c = p[i];
+    if (!(isalnum((unsigned char)c) || c == '_' || c == '-' || c == '.' || c == '/')) return false;
+  }
+  return true;
+}
+
 void setupServerWeb() {
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, User_Token, User_Role");
@@ -893,8 +903,36 @@ void setupServerWeb() {
     buf[total] = 0;
     const char* name = request->hasParam("name") ? request->getParam("name")->value().c_str() : "";
     if (!luaeng_valid_name(name)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
+    bool save = request->hasParam("save") && request->getParam("save")->value() == "1";
+    String page = request->hasParam("page") ? request->getParam("page")->value() : String("");
+    if (page.length() && !validUiPage(page)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
+    if (save && !luaeng_save(name, buf, total, page.c_str())) { request->send(500, "application/json", "{\"ok\":false}"); return; }
     bool ok = luaeng_run(name, buf, total);
     request->send(ok ? 200 : 503, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+
+  server.on("/script/files", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    request->send(200, "application/json", luaeng_files_json());
+  });
+  server.on("/script/auto", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    bool on = request->hasParam("on") && request->getParam("on")->value() == "1";
+    bool ok = luaeng_set_auto(n.c_str(), on);
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+  server.on("/script/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    bool ok = luaeng_delete(n.c_str());
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  });
+  server.on("/script/runfile", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    bool ok = luaeng_run_file(n.c_str());
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
   });
 
   server.on("/script/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
