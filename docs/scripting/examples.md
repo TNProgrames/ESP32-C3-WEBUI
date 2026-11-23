@@ -368,6 +368,75 @@ end)
 ```
 يمكن إيقاف سكريبت العرض وتعديله دون لمس الحساس، وتجرّب المستقبل من الطرفية: `pub temp 35`.
 
+### 32) البحث عن أجهزة I2C
+```lua
+i2c.begin(6, 7, 100000)              -- SDA=6, SCL=7 (غيّرهما حسب لوحتك)
+local found = i2c.scan()
+if #found == 0 then print("no I2C devices (check wiring and pull-ups)") end
+for _, a in ipairs(found) do print(string.format("found 0x%02X", a)) end
+```
+
+### 33) ماسح I2C بزر في لوحة
+```lua
+local p = ui.panel("I2C scanner")
+i2c.begin(6, 7)
+p:label("r", "press Scan")
+p:button("scan", "Scan", function()
+  local t = {}
+  for _, a in ipairs(i2c.scan()) do t[#t + 1] = string.format("0x%02X", a) end
+  p:set("r", #t > 0 and table.concat(t, " ") or "none found")
+end)
+```
+
+### 34) قراءة سجلات حساس وكتابتها
+```lua
+i2c.begin(6, 7)
+local id, err = i2c.read_reg(0x76, 0xD0)         -- رقم واحد (BME280 يعيد 0x60)
+if id then print(string.format("chip id = 0x%02X", id)) else print("read failed:", err) end
+print("write ok:", i2c.write(0x76, { 0xF4, 0x27 }))
+local two = i2c.write_read(0x76, { 0xFA }, 2)    -- أرسل ثم اقرأ بايتين
+if two then print(two[1], two[2]) end
+```
+
+### 35) مكتبة بسيطة وطريقة استعمالها (require)
+**احفظ كمكتبة باسم `util`** (فعّل «حفظ كمكتبة» في المختبر):
+```lua
+local M = {}
+function M.clamp(x, lo, hi) return math.max(lo, math.min(hi, x)) end
+function M.map(x, a, b, c, d) return c + (x - a) * (d - c) / (b - a) end
+function M.round(x, n) local m = 10 ^ (n or 0) return math.floor(x * m + 0.5) / m end
+return M
+```
+**ثم في أي سكريبت:**
+```lua
+local util = require("util")
+print(util.clamp(150, 0, 100), util.map(512, 0, 1023, 0, 3.3), util.round(3.14159, 2))
+```
+
+### 36) درايفر I2C صغير بنفسك: حساس بسجلين (هيكل)
+**مكتبة `mydev`:**
+```lua
+local M = {}
+M.__index = M
+function M.new(addr)
+  local self = setmetatable({ addr = addr }, M)
+  assert(i2c.write_reg(addr, 0x00, 0x01), "device not responding")   -- تهيئة
+  return self
+end
+function M:read()
+  local b = i2c.read_reg(self.addr, 0x10, 2)
+  if not b then return nil end
+  return (b[1] << 8) | b[2]
+end
+return M
+```
+**السكريبت:**
+```lua
+i2c.begin(6, 7)
+local dev = require("mydev").new(0x40)
+timer.every(1000, function() print(dev:read()) end)
+```
+
 ## صفحات مخصصة (طبقة iframe)
 
 الصفحة ملف HTML على الجهاز (`/ui/<name>.html`). في المختبر: فعّل "صفحة HTML مخصصة" واكتب المسار والمحتوى، فتُحفظ قبل التشغيل. داخل الصفحة الكائن `esp` (انظر [ui.md](ui.md)).

@@ -22,6 +22,10 @@ export const en = {
   'تعذر الحذف': 'Could not delete', 'تعذر فتح الملف': 'Could not open the file', 'حذف السكريبت': 'Delete script',
   'تشغيل': 'Run', 'إيقاف': 'Stop', 'تعديل': 'Edit', 'حذف': 'Delete',
   'تشغيل تلقائي عند إقلاع الجهاز': 'Run automatically at device boot',
+  // Lab: libraries
+  'حفظ كمكتبة (require) بدل التشغيل': 'Save as library (require) instead of running', 'حفظ المكتبة': 'Save library', 'حُفظت المكتبة': 'Library saved',
+  'المكتبات': 'Libraries', 'حذف المكتبة': 'Delete library',
+  'لا توجد مكتبات. فعّل «حفظ كمكتبة» واحفظ ملفًا ثم استعمله بـ require.': 'No libraries. Enable "Save as library", save a file, then use it with require.',
   // Login
   'تسجيل الدخول': 'Sign in', 'المستخدم': 'User', 'كلمة المرور': 'Password', 'دخول': 'Sign in',
   'اسم المستخدم أو كلمة المرور غير صحيحة': 'Wrong username or password',

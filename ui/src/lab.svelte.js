@@ -9,16 +9,18 @@ export const lab = $state({
   name: s.name || 'lab',
   code: typeof s.code === 'string' ? s.code : examples['Blink (GPIO8)'].code,
   showPage: !!s.showPage,
+  asLib: !!s.asLib,           // حفظ كمكتبة require بدل تشغيل سكريبت
   pagePath: s.pagePath || '/ui/page.html',
   pageHtml: s.pageHtml || '',
   out: '',          // الطرفية الوسيطة
   seq: 0,
   list: [],         // السكريبتات العاملة
-  files: []         // الملفات المحفوظة على الجهاز
+  files: [],        // الملفات المحفوظة على الجهاز
+  libs: []          // مكتبات /scripts/lib
 });
 
 export function persistLab() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ name: lab.name, code: lab.code, showPage: lab.showPage, pagePath: lab.pagePath, pageHtml: lab.pageHtml }));
+    localStorage.setItem(KEY, JSON.stringify({ name: lab.name, code: lab.code, showPage: lab.showPage, asLib: lab.asLib, pagePath: lab.pagePath, pageHtml: lab.pageHtml }));
   } catch {}
 }

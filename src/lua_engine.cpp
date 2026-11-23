@@ -1,5 +1,6 @@
 #include "lua_engine.h"
 #include <LittleFS.h>
+#include <Wire.h>
 #include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -23,6 +24,7 @@ extern "C" {
 #define MAX_CODE      8192
 #define PWM_MAX       6
 #define NUM_PINS      22
+#define PIN_I2C       255   // مالك خاص: أرجل ناقل I2C المشترك
 
 enum { ST_FREE = 0, ST_RUN = 1, ST_ERR = 2 };
 
@@ -44,6 +46,8 @@ struct Script {
   JsonDocument* kv;      // مخزن storage (يُحمَّل عند أول استعمال)
   bool      kvDirty;
   uint32_t  kvSaveAt;
+  bool      usesI2c;
+  uint8_t   requireDepth;
 };
 
 static Script scripts[MAX_SCRIPTS];
@@ -83,6 +87,7 @@ static int claimPin(lua_State* L, int p) {
   Script* s = me(L);
   if (!pinAllowed(p)) return luaL_error(L, "pin %d not allowed", p);
   int o = pinOwner[p];
+  if (o == PIN_I2C) return luaL_error(L, "pin %d is used by the I2C bus", p);
   if (o && o != idxOf(s) + 1) return luaL_error(L, "pin %d owned by %s", p, scripts[o - 1].name);
   pinOwner[p] = idxOf(s) + 1;
   return 0;
@@ -539,6 +544,16 @@ static int l_storage_clear(lua_State* L);
 static int l_bus_publish(lua_State* L);
 static int l_bus_subscribe(lua_State* L);
 static int l_bus_unsubscribe(lua_State* L);
+static int l_require(lua_State* L);
+static int l_i2c_begin(lua_State* L);
+static int l_i2c_stop(lua_State* L);
+static int l_i2c_scan(lua_State* L);
+static int l_i2c_write(lua_State* L);
+static int l_i2c_read(lua_State* L);
+static int l_i2c_write_read(lua_State* L);
+static int l_i2c_write_reg(lua_State* L);
+static int l_i2c_read_reg(lua_State* L);
+static void i2cRelease(Script* s);
 
 // ---------- دورة حياة السكريبت ----------
 static void setStatus(Script* s, uint8_t st, const char* err) {
@@ -556,6 +571,7 @@ static void releaseResources(Script* s) {
     pinOwner[p] = 0;
   }
   kvRelease(s);
+  i2cRelease(s);
   uiDrop(idxOf(s));
   if (s->L) { lua_close(s->L); s->L = nullptr; }
   s->mem = 0;
@@ -629,7 +645,10 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
   static const luaL_Reg stoF[]  = { {"get", l_storage_get}, {"set", l_storage_set}, {"remove", l_storage_remove}, {"clear", l_storage_clear}, {NULL, NULL} };
   static const luaL_Reg busF[]  = { {"publish", l_bus_publish}, {"subscribe", l_bus_subscribe}, {"unsubscribe", l_bus_unsubscribe}, {NULL, NULL} };
-  reg(L, "storage", stoF); reg(L, "bus", busF);
+  static const luaL_Reg i2cF[]  = { {"begin", l_i2c_begin}, {"stop", l_i2c_stop}, {"scan", l_i2c_scan}, {"write", l_i2c_write}, {"read", l_i2c_read},
+                                    {"write_read", l_i2c_write_read}, {"write_reg", l_i2c_write_reg}, {"read_reg", l_i2c_read_reg}, {NULL, NULL} };
+  reg(L, "storage", stoF); reg(L, "bus", busF); reg(L, "i2c", i2cF);
+  lua_pushcfunction(L, l_require); lua_setglobal(L, "require");
   reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
   if (luaL_loadbufferx(L, UI_PRELUDE, sizeof(UI_PRELUDE) - 1, "=ui", "t") != LUA_OK || !protectedCall(s, 0)) {
     if (s->state == ST_RUN) { const char* m = lua_tostring(L, -1); failScript(s, m ? m : "ui init failed"); }
@@ -966,6 +985,235 @@ static void busDrain() {
   }
 }
 
+
+// ---------- I2C (ناقل مشترك بين السكريبتات؛ المهمة الوحيدة التي تلمسه هي مهمة المحرك) ----------
+#define I2C_MAX 128
+static bool i2cOn = false;
+static int i2cSda = -1, i2cScl = -1;
+static uint32_t i2cFreq = 0;
+
+// عمليات الناقل المحجوبة لا تُحسب من ميزانية الـ200ms
+struct IoTimer { Script* s; uint32_t t0; IoTimer(Script* sc) : s(sc), t0(millis()) {} ~IoTimer() { s->deadline += millis() - t0; } };
+
+static void i2cRelease(Script* s) {
+  if (!s->usesI2c) return;
+  s->usesI2c = false;
+  for (auto& x : scripts) if (x.usesI2c) return;      // ما زال هناك مستعمل آخر
+  if (i2cOn) {
+    Wire.end();
+    if (i2cSda >= 0) { pinOwner[i2cSda] = 0; pinMode(i2cSda, INPUT); }
+    if (i2cScl >= 0) { pinOwner[i2cScl] = 0; pinMode(i2cScl, INPUT); }
+    i2cOn = false; i2cSda = i2cScl = -1;
+  }
+}
+
+static void needI2c(lua_State* L) {
+  if (!i2cOn || !me(L)->usesI2c) luaL_error(L, "call i2c.begin(sda, scl) first");
+}
+static int checkAddr(lua_State* L, int arg) {
+  lua_Integer a = luaL_checkinteger(L, arg);
+  if (a < 1 || a > 126) luaL_error(L, "I2C address 1..126");
+  return (int)a;
+}
+// بايتات من جدول أرقام (0..255) أو من نص
+static size_t getBytes(lua_State* L, int idx, uint8_t* buf, size_t max) {
+  idx = lua_absindex(L, idx);
+  if (lua_type(L, idx) == LUA_TSTRING) {
+    size_t l; const char* p = lua_tolstring(L, idx, &l);
+    if (l > max) luaL_error(L, "too many bytes (max %d)", (int)max);
+    memcpy(buf, p, l);
+    return l;
+  }
+  luaL_checktype(L, idx, LUA_TTABLE);
+  size_t n = (size_t)luaL_len(L, idx);
+  if (n > max) luaL_error(L, "too many bytes (max %d)", (int)max);
+  for (size_t i = 0; i < n; i++) {
+    lua_rawgeti(L, idx, (lua_Integer)i + 1);
+    if (!lua_isinteger(L, -1)) luaL_error(L, "bytes must be integers 0..255");
+    lua_Integer v = lua_tointeger(L, -1);
+    if (v < 0 || v > 255) luaL_error(L, "bytes must be integers 0..255");
+    buf[i] = (uint8_t)v;
+    lua_pop(L, 1);
+  }
+  return n;
+}
+static void pushBytes(lua_State* L, const uint8_t* b, size_t n) {
+  lua_createtable(L, (int)n, 0);
+  for (size_t i = 0; i < n; i++) { lua_pushinteger(L, b[i]); lua_rawseti(L, -2, (lua_Integer)i + 1); }
+}
+static const char* i2cErr(int e) {
+  switch (e) { case 2: return "nack_addr"; case 3: return "nack_data"; case 5: return "timeout"; default: return "error"; }
+}
+static int failResult(lua_State* L, const char* why) { lua_pushnil(L); lua_pushstring(L, why); return 2; }
+
+static int l_i2c_begin(lua_State* L) {
+  Script* s = me(L);
+  int sda = (int)luaL_checkinteger(L, 1), scl = (int)luaL_checkinteger(L, 2);
+  lua_Integer f = luaL_optinteger(L, 3, 100000);
+  if (f < 10000 || f > 1000000) return luaL_error(L, "freq 10000..1000000");
+  if (i2cOn) {
+    if (sda != i2cSda || scl != i2cScl) return luaL_error(L, "I2C already on pins %d,%d", i2cSda, i2cScl);
+    s->usesI2c = true;
+    if ((uint32_t)f != i2cFreq) { Wire.setClock((uint32_t)f); i2cFreq = (uint32_t)f; }
+    return 0;
+  }
+  if (sda == scl) return luaL_error(L, "sda and scl must differ");
+  if (!pinAllowed(sda) || !pinAllowed(scl)) return luaL_error(L, "pin not allowed");
+  int mine = idxOf(s) + 1;
+  if ((pinOwner[sda] && pinOwner[sda] != mine) || (pinOwner[scl] && pinOwner[scl] != mine)) return luaL_error(L, "I2C pin already owned by another script");
+  if (!Wire.begin(sda, scl, (uint32_t)f)) return luaL_error(L, "I2C init failed");
+  Wire.setTimeOut(30);
+  pinOwner[sda] = pinOwner[scl] = PIN_I2C;
+  i2cOn = true; i2cSda = sda; i2cScl = scl; i2cFreq = (uint32_t)f;
+  s->usesI2c = true;
+  return 0;
+}
+static int l_i2c_stop(lua_State* L) { i2cRelease(me(L)); return 0; }
+
+static int l_i2c_scan(lua_State* L) {
+  needI2c(L);
+  IoTimer t(me(L));
+  lua_newtable(L);
+  int n = 0;
+  for (int a = 8; a < 120; a++) {
+    Wire.beginTransmission((uint8_t)a);
+    if (Wire.endTransmission() == 0) { lua_pushinteger(L, a); lua_rawseti(L, -2, ++n); }
+  }
+  return 1;
+}
+static int l_i2c_write(lua_State* L) {
+  needI2c(L);
+  int addr = checkAddr(L, 1);
+  uint8_t buf[I2C_MAX]; size_t n = getBytes(L, 2, buf, I2C_MAX);
+  IoTimer t(me(L));
+  Wire.beginTransmission((uint8_t)addr);
+  Wire.write(buf, n);
+  int e = Wire.endTransmission(true);
+  if (e == 0) { lua_pushboolean(L, 1); return 1; }
+  lua_pushboolean(L, 0); lua_pushstring(L, i2cErr(e));
+  return 2;
+}
+static int doRead(lua_State* L, int addr, size_t n) {
+  size_t got = Wire.requestFrom((uint16_t)addr, n, true);
+  uint8_t b[I2C_MAX];
+  size_t i = 0;
+  while (i < got && i < n && Wire.available()) b[i++] = (uint8_t)Wire.read();
+  if (i != n) return failResult(L, "short_read");
+  pushBytes(L, b, n);
+  return 1;
+}
+static size_t checkCount(lua_State* L, int arg) {
+  lua_Integer n = luaL_checkinteger(L, arg);
+  if (n < 1 || n > I2C_MAX) luaL_error(L, "count 1..%d", I2C_MAX);
+  return (size_t)n;
+}
+static int l_i2c_read(lua_State* L) {
+  needI2c(L);
+  int addr = checkAddr(L, 1);
+  size_t n = checkCount(L, 2);
+  IoTimer t(me(L));
+  return doRead(L, addr, n);
+}
+static int l_i2c_write_read(lua_State* L) {
+  needI2c(L);
+  int addr = checkAddr(L, 1);
+  uint8_t tx[I2C_MAX]; size_t tn = getBytes(L, 2, tx, I2C_MAX);
+  size_t n = checkCount(L, 3);
+  IoTimer t(me(L));
+  Wire.beginTransmission((uint8_t)addr);
+  Wire.write(tx, tn);
+  int e = Wire.endTransmission(false);                 // إعادة بدء بلا إيقاف
+  if (e != 0) return failResult(L, i2cErr(e));
+  return doRead(L, addr, n);
+}
+// i2c.write_reg(addr, reg, value): value رقم أو جدول/نص بايتات
+static int l_i2c_write_reg(lua_State* L) {
+  needI2c(L);
+  int addr = checkAddr(L, 1);
+  lua_Integer reg = luaL_checkinteger(L, 2);
+  if (reg < 0 || reg > 255) return luaL_error(L, "reg 0..255");
+  uint8_t buf[I2C_MAX]; size_t n = 0;
+  buf[n++] = (uint8_t)reg;
+  if (lua_isinteger(L, 3)) {
+    lua_Integer v = lua_tointeger(L, 3);
+    if (v < 0 || v > 255) return luaL_error(L, "value 0..255");
+    buf[n++] = (uint8_t)v;
+  } else n += getBytes(L, 3, buf + 1, I2C_MAX - 1);
+  IoTimer t(me(L));
+  Wire.beginTransmission((uint8_t)addr);
+  Wire.write(buf, n);
+  int e = Wire.endTransmission(true);
+  if (e == 0) { lua_pushboolean(L, 1); return 1; }
+  lua_pushboolean(L, 0); lua_pushstring(L, i2cErr(e));
+  return 2;
+}
+// i2c.read_reg(addr, reg [, n]): بلا n تعيد رقمًا واحدًا، ومع n جدول بايتات
+static int l_i2c_read_reg(lua_State* L) {
+  needI2c(L);
+  int addr = checkAddr(L, 1);
+  lua_Integer reg = luaL_checkinteger(L, 2);
+  if (reg < 0 || reg > 255) return luaL_error(L, "reg 0..255");
+  bool single = lua_isnoneornil(L, 3);
+  size_t n = single ? 1 : checkCount(L, 3);
+  IoTimer t(me(L));
+  Wire.beginTransmission((uint8_t)addr);
+  Wire.write((uint8_t)reg);
+  int e = Wire.endTransmission(false);
+  if (e != 0) return failResult(L, i2cErr(e));
+  int r = doRead(L, addr, n);
+  if (r == 1 && single) { lua_rawgeti(L, -1, 1); lua_remove(L, -2); }
+  return r;
+}
+
+
+// ---------- require: مكتبات Lua من /scripts/lib/<name>.lua ----------
+#define LIB_DIR "/scripts/lib"
+
+static char* loadPath(const String& p, size_t* len) {
+  File f = LittleFS.open(p, "r");
+  if (!f || f.isDirectory() || f.size() == 0 || f.size() > MAX_CODE) return nullptr;
+  size_t n = f.size();
+  char* buf = (char*)malloc(n + 1);
+  if (!buf) return nullptr;
+  size_t r = f.read((uint8_t*)buf, n);
+  buf[r] = 0; *len = r;
+  return buf;
+}
+
+static int l_require(lua_State* L) {
+  Script* s = me(L);
+  const char* name = luaL_checkstring(L, 1);
+  if (!strncmp(name, "lib/", 4)) name += 4;                 // require("lib/x") = require("x")
+  if (!luaeng_valid_name(name)) return luaL_error(L, "bad module name '%s'", name);
+  lua_getfield(L, LUA_REGISTRYINDEX, "esp_loaded");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1); lua_newtable(L);
+    lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "esp_loaded");
+  }
+  lua_getfield(L, -1, name);
+  if (!lua_isnil(L, -1)) return 1;                           // محمَّلة سابقًا
+  lua_pop(L, 1);
+  if (s->requireDepth >= 4) return luaL_error(L, "require nested too deep (circular?)");
+  size_t len = 0;
+  uint32_t t0 = millis();
+  char* buf = loadPath(String(LIB_DIR) + "/" + name + ".lua", &len);
+  s->deadline += millis() - t0;
+  if (!buf) return luaL_error(L, "module '%s' not found (/scripts/lib/%s.lua)", name, name);
+  String chunk = String("lib/") + name;
+  int st = luaL_loadbufferx(L, buf, len, chunk.c_str(), "t");
+  free(buf);
+  if (st != LUA_OK) return lua_error(L);
+  lua_pushstring(L, name);
+  s->requireDepth++;
+  st = lua_pcall(L, 1, 1, 0);
+  s->requireDepth--;
+  if (st != LUA_OK) return lua_error(L);
+  if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_pushboolean(L, 1); }
+  lua_pushvalue(L, -1);
+  lua_setfield(L, -3, name);
+  return 1;
+}
+
 static void handleEvent(const UiEv& e) {
   if (e.panel >= MAX_PANELS || !panels[e.panel].used) return;
   Script* s = &scripts[panels[e.panel].owner];
@@ -1224,4 +1472,45 @@ String luaeng_storage_dump(const char* name) {
   if (!luaeng_valid_name(name)) return String("invalid name");
   String t = readText(kvPath(name));
   return t.length() ? t : String("(empty)");
+}
+
+bool luaeng_save_lib(const char* name, const char* code, size_t len) {
+  if (!luaeng_valid_name(name) || len == 0 || len > MAX_CODE) return false;
+  ensureDir();
+  if (!LittleFS.exists(LIB_DIR)) LittleFS.mkdir(LIB_DIR);
+  File f = LittleFS.open(String(LIB_DIR) + "/" + name + ".lua", "w");
+  if (!f) return false;
+  size_t w = f.write((const uint8_t*)code, len);
+  f.close();
+  return w == len;
+}
+
+bool luaeng_delete_lib(const char* name) {
+  if (!luaeng_valid_name(name)) return false;
+  String p = String(LIB_DIR) + "/" + name + ".lua";
+  if (LittleFS.exists(p)) LittleFS.remove(p);
+  return true;
+}
+
+String luaeng_libs_json() {
+  JsonDocument d;
+  JsonArray a = d.to<JsonArray>();
+  File dir = LittleFS.open(LIB_DIR);
+  if (dir && dir.isDirectory()) {
+    File f = dir.openNextFile();
+    while (f) {
+      String n = f.name();
+      if (!f.isDirectory() && n.endsWith(".lua")) {
+        n = n.substring(0, n.length() - 4);
+        if (luaeng_valid_name(n.c_str())) {
+          JsonObject o = a.add<JsonObject>();
+          o["name"] = n;
+          o["size"] = (uint32_t)f.size();
+        }
+      }
+      f = dir.openNextFile();
+    }
+  }
+  String out; serializeJson(d, out);
+  return out;
 }

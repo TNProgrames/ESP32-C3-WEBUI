@@ -140,6 +140,42 @@ bus.subscribe("temp", function(v) p:set("t", "temp: " .. v) end)
 bus.subscribe("status", function(st)
   p:set("s", "n=" .. st.n .. " ok=" .. tostring(st.ok))
 end)` },
+  'I2C: scan': { code:
+`-- يبحث عن أجهزة I2C (SDA=GPIO6, SCL=GPIO7؛ غيّرهما حسب لوحتك)
+i2c.begin(6, 7, 100000)
+local found = i2c.scan()
+if #found == 0 then print("no I2C devices (check wiring and pull-ups)") end
+for _, a in ipairs(found) do
+  print(string.format("found 0x%02X", a))
+end` },
+  'I2C: scan panel': { code:
+`local p = ui.panel("I2C scanner")
+i2c.begin(6, 7)
+p:label("r", "press Scan")
+p:button("scan", "Scan", function()
+  local t = {}
+  for _, a in ipairs(i2c.scan()) do t[#t + 1] = string.format("0x%02X", a) end
+  p:set("r", #t > 0 and table.concat(t, " ") or "none found")
+end)` },
+  'I2C: read register': { code:
+`-- مثال: قراءة سجل هوية (BME280 عنوان 0x76: السجل 0xD0 يعيد 0x60)
+i2c.begin(6, 7)
+local id, err = i2c.read_reg(0x76, 0xD0)
+if id then print(string.format("chip id = 0x%02X", id)) else print("read failed:", err) end
+local ok = i2c.write(0x76, { 0xF4, 0x27 })      -- كتابة بايتات
+print("write ok:", ok)
+local two = i2c.write_read(0x76, { 0xFA }, 2)   -- أرسل ثم اقرأ بايتين
+if two then print(two[1], two[2]) end` },
+  'Library: util (save as lib)': { lib: true, libName: 'util', code:
+`-- مكتبة: احفظها باسم util ثم استعملها بـ require("util")
+local M = {}
+function M.clamp(x, lo, hi) return math.max(lo, math.min(hi, x)) end
+function M.map(x, a, b, c, d) return c + (x - a) * (d - c) / (b - a) end
+function M.round(x, n) local m = 10 ^ (n or 0) return math.floor(x * m + 0.5) / m end
+return M` },
+  'Use library: util': { code:
+`local util = require("util")      -- /scripts/lib/util.lua
+print(util.clamp(150, 0, 100), util.map(512, 0, 1023, 0, 3.3), util.round(3.14159, 2))` },
   'Panel: أدوات جاهزة': { code:
 `-- لوحة بأدوات جاهزة: تظهر في تبويب اللوحات
 local p = ui.panel("Control")

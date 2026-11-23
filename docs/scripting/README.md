@@ -14,9 +14,11 @@
 | `sys` / `print` / `log` | ✅ | `sys.millis` `uptime` `heap` `version` وكذلك `print` و`log` |
 | `storage` | ✅ | مخزن دائم لكل سكريبت (2KB) |
 | `bus` | ✅ | نشر/اشتراك بين السكريبتات |
-| `i2c` `spi` `uart` | 🕒 | مخطّط (التالي: I2C) |
+| `i2c` | ✅ | `begin` `scan` `write` `read` `write_read` `write_reg` `read_reg` `stop` |
+| `spi` `uart` | 🕒 | مخطّط |
 | `rmt` `pulse` وبروتوكولات التوقيت | 🕒 | مخطّط |
-| درايفرات `require` | 🕒 | مخطّط |
+| `require` والمكتبات | ✅ | `/scripts/lib/<name>.lua` |
+| درايفرات جاهزة (SSD1306, BME280) | 🕒 | التالي |
 | `on_stop` | ✅ | تُستدعى عند الإيقاف/الاستبدال (لا عند الخطأ) |
 | `--@pins` `--@needs` | 🕒 | مخطّط |
 
@@ -34,9 +36,10 @@
 | [ui.md](ui.md) | اللوحات: الأدوات والصفحات المخصصة (+ المطبّق فعليًا) |
 | [system.md](system.md) | `print` و`sys` و`storage` و`bus` |
 | [limits.md](limits.md) | الحدود والأمان والأخطاء |
-| [i2c.md](i2c.md) · [spi.md](spi.md) · [uart.md](uart.md) | الناقلات (مخطّطة) |
+| [i2c.md](i2c.md) | ناقل I2C (منفَّذ) |
+| [spi.md](spi.md) · [uart.md](uart.md) | الناقلات (مخطّطة) |
 | [timing.md](timing.md) | البروتوكولات الحساسة للتوقيت (مخطّط) |
-| [drivers.md](drivers.md) | الدرايفرات (مخطّط) |
+| [drivers.md](drivers.md) | `require` والدرايفرات |
 
 ## القاعدة الذهبية
 
@@ -77,7 +80,7 @@ end)
 
 ## ما المتاح من Lua
 
-`base` (بلا `load`/`dofile`/`loadfile`/`require`) و`string` (بلا `dump`) و`table` و`math` و`utf8` و`coroutine`. الأعداد الصحيحة 64 بت، والعشرية **32 بت** (لا وحدة فاصلة عائمة في C3). غير متاح: `os` و`io` و`debug`.
+`base` (بلا `load`/`dofile`/`loadfile`، و`require` خاصة بـ `/scripts/lib/`) و`string` (بلا `dump`) و`table` و`math` و`utf8` و`coroutine`. الأعداد الصحيحة 64 بت، والعشرية **32 بت** (لا وحدة فاصلة عائمة في C3). غير متاح: `os` و`io` و`debug`.
 
 ## الطبقات: ما في الفيرموير وما في السكريبت
 

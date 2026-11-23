@@ -11,7 +11,7 @@
   let busy = $state(false);
 
   // حفظ الحالة في المتصفح عند كل تعديل
-  $effect(() => { lab.name; lab.code; lab.showPage; lab.pagePath; lab.pageHtml; persistLab(); });
+  $effect(() => { lab.name; lab.code; lab.showPage; lab.asLib; lab.pagePath; lab.pageHtml; persistLab(); });
 
   const running = $derived(Object.fromEntries(lab.list.map((s) => [s.name, s])));
   // الأسماء: الملفات المحفوظة + أي سكريبت يعمل وليس محفوظًا
@@ -28,8 +28,8 @@
 
   async function refresh() {
     try {
-      const [list, files] = await Promise.all([api('/script/list'), api('/script/files')]);
-      lab.list = list; lab.files = files;
+      const [list, files, libs] = await Promise.all([api('/script/list'), api('/script/files'), api('/script/libs')]);
+      lab.list = list; lab.files = files; lab.libs = libs;
       const r = await api('/terminal/log?since=' + lab.seq);
       lab.seq = r.seq;
       if (r.text) {
@@ -68,6 +68,12 @@
     if (!lab.code.trim()) return say(t('السكريبت فارغ'));
     busy = true;
     try {
+      if (lab.asLib) {
+        await apiRaw('/script/run?lib=1&name=' + n, lab.code);
+        say(t('حُفظت المكتبة') + ' ' + n + ' → require("' + n + '")');
+        busy = false; setTimeout(refresh, 300);
+        return;
+      }
       let q = '/script/run?save=1&name=' + n;
       if (lab.showPage && lab.pageHtml.trim()) { await savePage(); q += '&page=' + encodeURIComponent(lab.pagePath); }
       await apiRaw(q, lab.code);
@@ -103,12 +109,22 @@
     } catch (e) { fail(e, t('تعذر فتح الملف')); }
   }
 
+  async function editLib(l) {
+    try {
+      lab.code = await readFile('/scripts/lib/' + l.name + '.lua');
+      lab.name = l.name; lab.asLib = true; lab.showPage = false; lab.pageHtml = '';
+      document.getElementById('lab-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) { fail(e, t('تعذر فتح الملف')); }
+  }
+  function delLib(n) { if (confirm(t('حذف المكتبة') + ' ' + n + '؟')) call('/script/dellib?name=' + encodeURIComponent(n), t('تعذر الحذف')); }
+
   function load(e) {
     const k = e.target.value;
     if (!k) return;
     const ex = examples[k];
     lab.code = ex.code;
-    lab.name = k.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase().slice(0, 20) || 'lab';
+    lab.asLib = !!ex.lib;
+    lab.name = ex.libName || k.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase().slice(0, 20) || 'lab';
     if (ex.page) { lab.pagePath = ex.page.path; lab.pageHtml = ex.page.html; lab.showPage = true; }
     else { lab.pageHtml = ''; lab.showPage = false; }
     e.target.value = '';
@@ -139,8 +155,12 @@
     <CodeEditor bind:value={lab.pageHtml} lang="html" height={200} />
   {/if}
 
+  <label class="row" style="margin:6px 0;font-size:13px;gap:8px">
+    <input type="checkbox" style="width:auto" bind:checked={lab.asLib} /> {t('حفظ كمكتبة (require) بدل التشغيل')}
+  </label>
+
   <div class="row" style="margin:10px 0">
-    <button class="btn" onclick={run} disabled={busy}>▶ {t('حفظ وتشغيل')}</button>
+    <button class="btn" onclick={run} disabled={busy}>{lab.asLib ? '📦 ' + t('حفظ المكتبة') : '▶ ' + t('حفظ وتشغيل')}</button>
     <button class="btn ghost" onclick={() => stop('all')}>⏹ {t('إيقاف الكل')}</button>
     <button class="btn ghost" onclick={() => go('panels')}>🪟 {t('اللوحات')}</button>
   </div>
@@ -176,6 +196,22 @@
         </label>
       {/if}
       {#if f.run?.err}<div style="color:#e55;font-size:12px;direction:ltr;text-align:left;margin-top:4px">{f.run.err}</div>{/if}
+    </div>
+  {/each}
+</div>
+
+<div class="glass">
+  <h3 style="margin:0 0 10px">📦 {t('المكتبات')} <span style="font-size:12px;color:var(--muted)">/scripts/lib · require("name")</span></h3>
+  {#if !lab.libs.length}
+    <div style="color:var(--muted);font-size:13px">{t('لا توجد مكتبات. فعّل «حفظ كمكتبة» واحفظ ملفًا ثم استعمله بـ require.')}</div>
+  {/if}
+  {#each lab.libs as l (l.name)}
+    <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px"><b>{l.name}</b> <span style="color:var(--muted)">· {l.size}B</span></span>
+      <span class="row" style="gap:4px;flex-wrap:nowrap">
+        <button class="btn ghost" title={t('تعديل')} onclick={() => editLib(l)}>✏️</button>
+        <button class="btn ghost" title={t('حذف')} onclick={() => delLib(l.name)}>🗑</button>
+      </span>
     </div>
   {/each}
 </div>

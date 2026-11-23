@@ -912,6 +912,11 @@ void setupServerWeb() {
     buf[total] = 0;
     const char* name = request->hasParam("name") ? request->getParam("name")->value().c_str() : "";
     if (!luaeng_valid_name(name)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
+    if (request->hasParam("lib") && request->getParam("lib")->value() == "1") {   // حفظ مكتبة require بلا تشغيل
+      bool okLib = luaeng_save_lib(name, buf, total);
+      request->send(okLib ? 200 : 500, "application/json", okLib ? "{\"ok\":true}" : "{\"ok\":false}");
+      return;
+    }
     bool save = request->hasParam("save") && request->getParam("save")->value() == "1";
     String page = request->hasParam("page") ? request->getParam("page")->value() : String("");
     if (page.length() && !validUiPage(page)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
@@ -923,6 +928,16 @@ void setupServerWeb() {
   server.on("/script/files", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
     request->send(200, "application/json", luaeng_files_json());
+  });
+  server.on("/script/libs", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    request->send(200, "application/json", luaeng_libs_json());
+  });
+  server.on("/script/dellib", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    bool ok = luaeng_delete_lib(n.c_str());
+    request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
   });
   server.on("/script/auto", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
