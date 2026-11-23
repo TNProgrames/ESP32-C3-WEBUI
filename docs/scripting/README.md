@@ -12,7 +12,8 @@
 | `timer` | ✅ | `every` `after` `cancel` |
 | `ui` | ✅ | أدوات جاهزة + `page/emit/on` في إطار معزول |
 | `sys` / `print` / `log` | ✅ | `sys.millis` `uptime` `heap` `version` وكذلك `print` و`log` |
-| `storage` `bus` | 🕒 | مخطّط |
+| `storage` | ✅ | مخزن دائم لكل سكريبت (2KB) |
+| `bus` | ✅ | نشر/اشتراك بين السكريبتات |
 | `i2c` `spi` `uart` | 🕒 | مخطّط (التالي: I2C) |
 | `rmt` `pulse` وبروتوكولات التوقيت | 🕒 | مخطّط |
 | درايفرات `require` | 🕒 | مخطّط |
@@ -31,7 +32,7 @@
 | [pwm.md](pwm.md) | خرج PWM |
 | [timer.md](timer.md) | المؤقتات (أساس عمل السكريبت) |
 | [ui.md](ui.md) | اللوحات: الأدوات والصفحات المخصصة (+ المطبّق فعليًا) |
-| [system.md](system.md) | `print` و`sys` (و`storage`/`bus` المخططان) |
+| [system.md](system.md) | `print` و`sys` و`storage` و`bus` |
 | [limits.md](limits.md) | الحدود والأمان والأخطاء |
 | [i2c.md](i2c.md) · [spi.md](spi.md) · [uart.md](uart.md) | الناقلات (مخطّطة) |
 | [timing.md](timing.md) | البروتوكولات الحساسة للتوقيت (مخطّط) |

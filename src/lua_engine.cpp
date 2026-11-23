@@ -16,6 +16,7 @@ extern "C" {
 #define MAX_SCRIPTS   3
 #define MAX_TIMERS    8
 #define MAX_WATCH     6
+#define MAX_SUBS      8
 #define NAME_LEN      24
 #define MEM_LIMIT     (48 * 1024)
 #define CALL_BUDGET   200      // ms كحد أقصى لكل استدعاء (حارس الحلقات اللانهائية)
@@ -25,6 +26,7 @@ extern "C" {
 
 enum { ST_FREE = 0, ST_RUN = 1, ST_ERR = 2 };
 
+struct LSub { bool used; char topic[16]; int ref; };
 struct LWatch { bool used; bool pending; uint8_t pin; uint8_t stable; uint8_t pendVal; uint16_t debounce; uint32_t changedAt; int ref; };
 struct LTimer { bool used; bool repeat; uint32_t period; uint32_t next; int ref; };
 
@@ -38,6 +40,10 @@ struct Script {
   char      err[96];
   LTimer    timers[MAX_TIMERS];
   LWatch    watches[MAX_WATCH];
+  LSub      subs[MAX_SUBS];
+  JsonDocument* kv;      // مخزن storage (يُحمَّل عند أول استعمال)
+  bool      kvDirty;
+  uint32_t  kvSaveAt;
 };
 
 static Script scripts[MAX_SCRIPTS];
@@ -499,16 +505,40 @@ function __ui_dispatch(i, n, v)
 end
 )LUA";
 
+static void pushVariant(lua_State* L, JsonVariantConst v, int depth) {
+  if (v.is<bool>()) lua_pushboolean(L, v.as<bool>());
+  else if (v.is<long long>()) lua_pushinteger(L, (lua_Integer)v.as<long long>());
+  else if (v.is<float>()) lua_pushnumber(L, v.as<float>());
+  else if (v.is<const char*>()) lua_pushstring(L, v.as<const char*>());
+  else if (depth < 3 && v.is<JsonObjectConst>()) {
+    lua_newtable(L);
+    for (JsonPairConst kv : v.as<JsonObjectConst>()) {
+      pushVariant(L, kv.value(), depth + 1);
+      lua_setfield(L, -2, kv.key().c_str());
+    }
+  } else if (depth < 3 && v.is<JsonArrayConst>()) {
+    lua_newtable(L);
+    int i = 1;
+    for (JsonVariantConst e : v.as<JsonArrayConst>()) { pushVariant(L, e, depth + 1); lua_rawseti(L, -2, i++); }
+  } else lua_pushnil(L);
+}
+
 static void pushJsonValue(lua_State* L, const char* json) {
   JsonDocument d;
   if (deserializeJson(d, json)) { lua_pushnil(L); return; }
-  JsonVariantConst v = d.as<JsonVariantConst>();
-  if (v.is<bool>()) lua_pushboolean(L, v.as<bool>());
-  else if (v.is<long>()) lua_pushinteger(L, v.as<long>());
-  else if (v.is<float>()) lua_pushnumber(L, v.as<float>());
-  else if (v.is<const char*>()) lua_pushstring(L, v.as<const char*>());
-  else lua_pushnil(L);
+  pushVariant(L, d.as<JsonVariantConst>(), 0);
 }
+
+// تُعرَّف لاحقًا (storage و bus)
+static void kvRelease(Script* s);
+static void kvFlushIfDue(Script* s, uint32_t now);
+static int l_storage_get(lua_State* L);
+static int l_storage_set(lua_State* L);
+static int l_storage_remove(lua_State* L);
+static int l_storage_clear(lua_State* L);
+static int l_bus_publish(lua_State* L);
+static int l_bus_subscribe(lua_State* L);
+static int l_bus_unsubscribe(lua_State* L);
 
 // ---------- دورة حياة السكريبت ----------
 static void setStatus(Script* s, uint8_t st, const char* err) {
@@ -525,11 +555,13 @@ static void releaseResources(Script* s) {
     pinMode(p, INPUT);
     pinOwner[p] = 0;
   }
+  kvRelease(s);
   uiDrop(idxOf(s));
   if (s->L) { lua_close(s->L); s->L = nullptr; }
   s->mem = 0;
   memset(s->timers, 0, sizeof(s->timers));
   memset(s->watches, 0, sizeof(s->watches));
+  memset(s->subs, 0, sizeof(s->subs));
 }
 
 static void failScript(Script* s, const char* msg) {
@@ -595,6 +627,9 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg timF[]  = { {"every", l_timer_every}, {"after", l_timer_after}, {"cancel", l_timer_cancel}, {NULL, NULL} };
   static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
   static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
+  static const luaL_Reg stoF[]  = { {"get", l_storage_get}, {"set", l_storage_set}, {"remove", l_storage_remove}, {"clear", l_storage_clear}, {NULL, NULL} };
+  static const luaL_Reg busF[]  = { {"publish", l_bus_publish}, {"subscribe", l_bus_subscribe}, {"unsubscribe", l_bus_unsubscribe}, {NULL, NULL} };
+  reg(L, "storage", stoF); reg(L, "bus", busF);
   reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
   if (luaL_loadbufferx(L, UI_PRELUDE, sizeof(UI_PRELUDE) - 1, "=ui", "t") != LUA_OK || !protectedCall(s, 0)) {
     if (s->state == ST_RUN) { const char* m = lua_tostring(L, -1); failScript(s, m ? m : "ui init failed"); }
@@ -613,6 +648,7 @@ static void startScript(const char* name, const char* code, size_t len) {
 
 static void tickScript(Script* s) {
   uint32_t now = millis();
+  kvFlushIfDue(s, now);
   for (int i = 0; i < MAX_WATCH && s->state == ST_RUN; i++) {
     LWatch& w = s->watches[i];
     if (!w.used) continue;
@@ -716,6 +752,220 @@ static void autorunBoot() {
   }
 }
 
+
+// ---------- storage: مخزن قيم دائم لكل سكريبت ----------
+#define KV_DIR   "/scripts/.data"
+#define KV_LIMIT 2048
+
+static String kvPath(const char* name) { return String(KV_DIR) + "/" + name + ".json"; }
+
+static JsonDocument* kvGet(Script* s) {
+  if (!s->kv) {
+    s->kv = new JsonDocument();
+    String txt = readText(kvPath(s->name));
+    if (txt.length()) deserializeJson(*s->kv, txt);       // ملف تالف = مخزن فارغ
+    if (!s->kv->is<JsonObject>()) s->kv->to<JsonObject>();
+  }
+  return s->kv;
+}
+static void kvFlush(Script* s) {
+  if (!s->kv || !s->kvDirty) return;
+  s->kvDirty = false;
+  ensureDir();
+  if (!LittleFS.exists(KV_DIR)) LittleFS.mkdir(KV_DIR);
+  String out; serializeJson(*s->kv, out);
+  writeText(kvPath(s->name), out);
+}
+static void kvRelease(Script* s) {
+  kvFlush(s);
+  delete s->kv;
+  s->kv = nullptr;
+}
+// الكتابة على الفلاش تُدمج: خلال 3 ثوانٍ من أول تعديل
+static void kvFlushIfDue(Script* s, uint32_t now) {
+  if (s->kvDirty && (int32_t)(now - s->kvSaveAt) >= 0) kvFlush(s);
+}
+static void kvTouch(Script* s) {
+  if (!s->kvDirty) { s->kvDirty = true; s->kvSaveAt = millis() + 3000; }
+}
+
+static int l_storage_get(lua_State* L) {
+  Script* s = me(L);
+  const char* key = luaL_checkstring(L, 1);
+  JsonObjectConst o = kvGet(s)->as<JsonObjectConst>();
+  JsonVariantConst v = o[key];
+  if (v.isNull()) { if (lua_gettop(L) >= 2) lua_pushvalue(L, 2); else lua_pushnil(L); }
+  else pushVariant(L, v, 3);
+  return 1;
+}
+static int kvRemove(lua_State* L, Script* s, const char* key) {
+  kvGet(s)->remove(String(key));
+  kvTouch(s);
+  return 0;
+}
+static int l_storage_set(lua_State* L) {
+  Script* s = me(L);
+  const char* key = luaL_checkstring(L, 1);
+  if (!safeName(key, 16)) return luaL_error(L, "bad key (letters, digits, _ -; max 15)");
+  int t = lua_type(L, 2);
+  if (t == LUA_TNIL || t == LUA_TNONE) return kvRemove(L, s, key);
+  if (t != LUA_TBOOLEAN && t != LUA_TNUMBER && t != LUA_TSTRING) return luaL_error(L, "storage value must be number|string|boolean");
+  JsonDocument* kv = kvGet(s);
+  size_t vlen = 24;
+  if (t == LUA_TSTRING) {
+    size_t l; const char* str = lua_tolstring(L, 2, &l);
+    if (l > 200) return luaL_error(L, "string too long (max 200)");
+    vlen = l + 2;
+    for (size_t i = 0; i < l; i++) if (str[i] == '"' || str[i] == '\\' || (unsigned char)str[i] < 0x20) vlen += 1;
+  }
+  JsonObjectConst o = kv->as<JsonObjectConst>();
+  size_t cur = measureJson(*kv);
+  JsonVariantConst ev = o[key];
+  size_t oldLen = ev.isNull() ? 0 : measureJson(ev) + strlen(key) + 4;
+  size_t addLen = vlen + strlen(key) + 4;
+  if (cur - oldLen + addLen > KV_LIMIT) return luaL_error(L, "storage full (max %d bytes)", KV_LIMIT);
+  String k(key);
+  if (t == LUA_TBOOLEAN) (*kv)[k] = (bool)lua_toboolean(L, 2);
+  else if (t == LUA_TSTRING) (*kv)[k] = String(lua_tostring(L, 2));
+  else if (lua_isinteger(L, 2)) (*kv)[k] = (long long)lua_tointeger(L, 2);
+  else (*kv)[k] = (float)lua_tonumber(L, 2);
+  kvTouch(s);
+  return 0;
+}
+static int l_storage_remove(lua_State* L) {
+  return kvRemove(L, me(L), luaL_checkstring(L, 1));
+}
+static int l_storage_clear(lua_State* L) {
+  Script* s = me(L);
+  kvGet(s)->to<JsonObject>();
+  kvTouch(s);
+  return 0;
+}
+
+// ---------- bus: نشر/اشتراك بين السكريبتات ----------
+#define BUS_Q    16
+#define BUS_JSON 120
+struct BusEv { uint8_t src; char topic[16]; char json[BUS_JSON]; };
+static BusEv busq[BUS_Q];
+static int busHead = 0, busCount = 0;
+static portMUX_TYPE busMux = portMUX_INITIALIZER_UNLOCKED;
+
+static bool busPush(uint8_t src, const char* topic, const char* json) {
+  bool ok = false;
+  portENTER_CRITICAL(&busMux);
+  if (busCount < BUS_Q) {
+    BusEv& e = busq[(busHead + busCount) % BUS_Q];
+    e.src = src;
+    strncpy(e.topic, topic, sizeof(e.topic) - 1); e.topic[sizeof(e.topic) - 1] = 0;
+    strncpy(e.json, json, sizeof(e.json) - 1); e.json[sizeof(e.json) - 1] = 0;
+    busCount++;
+    ok = true;
+  }
+  portEXIT_CRITICAL(&busMux);
+  return ok;
+}
+
+// قيمة Lua → JSON: رقم/نص/منطقي، أو جدول بسيط (مصفوفة أو كائن بحقول نصية وقيم بسيطة، حتى 12 عنصرًا)
+static bool encodeBus(lua_State* L, int idx, char* out, size_t cap) {
+  idx = lua_absindex(L, idx);
+  int t = lua_type(L, idx);
+  if (t != LUA_TTABLE) {
+    if (t == LUA_TFUNCTION || t == LUA_TUSERDATA || t == LUA_TTHREAD || t == LUA_TLIGHTUSERDATA) return false;
+    encodeVal(L, idx, out, cap);
+    return strlen(out) + 1 < cap;
+  }
+  int cnt = 0; bool arr = true;
+  lua_pushnil(L);
+  while (lua_next(L, idx)) {
+    cnt++;
+    if (!(lua_isinteger(L, -2) && lua_tointeger(L, -2) == cnt)) arr = false;
+    lua_pop(L, 1);
+    if (cnt > 12) { lua_pop(L, 1); return false; }
+  }
+  size_t n = 0;
+  out[n++] = arr ? '[' : '{';
+  out[n] = 0;
+  int i = 0;
+  lua_pushnil(L);
+  while (lua_next(L, idx)) {
+    char vb[64];
+    int vt = lua_type(L, -1);
+    bool bad = (vt == LUA_TTABLE || vt == LUA_TFUNCTION || vt == LUA_TUSERDATA || vt == LUA_TTHREAD || vt == LUA_TLIGHTUSERDATA);
+    if (!arr && (lua_type(L, -2) != LUA_TSTRING || !safeName(lua_tostring(L, -2), 16))) bad = true;
+    if (bad) { lua_pop(L, 2); return false; }
+    encodeVal(L, -1, vb, sizeof(vb));
+    int w = arr ? snprintf(out + n, cap - n, "%s%s", i ? "," : "", vb)
+                : snprintf(out + n, cap - n, "%s\"%s\":%s", i ? "," : "", lua_tostring(L, -2), vb);
+    if (w < 0 || n + w + 2 >= cap) { lua_pop(L, 2); return false; }
+    n += w; i++;
+    lua_pop(L, 1);
+  }
+  out[n++] = arr ? ']' : '}';
+  out[n] = 0;
+  return true;
+}
+
+static int l_bus_publish(lua_State* L) {
+  Script* s = me(L);
+  const char* topic = luaL_checkstring(L, 1);
+  if (!safeName(topic, 16)) return luaL_error(L, "bad topic (letters, digits, _ -; max 15)");
+  char json[BUS_JSON];
+  if (!encodeBus(L, 2, json, sizeof(json))) return luaL_error(L, "bus value must be number|string|boolean|simple table (max %d bytes)", BUS_JSON - 1);
+  if (!busPush(idxOf(s), topic, json)) logPrintf("[%s] bus queue full, dropped '%s'\n", s->name, topic);
+  return 0;
+}
+static int l_bus_subscribe(lua_State* L) {
+  Script* s = me(L);
+  const char* topic = luaL_checkstring(L, 1);
+  luaL_checktype(L, 2, LUA_TFUNCTION);
+  if (!safeName(topic, 16)) return luaL_error(L, "bad topic");
+  int slot = -1;
+  for (int i = 0; i < MAX_SUBS; i++) if (s->subs[i].used && !strcmp(s->subs[i].topic, topic)) slot = i;
+  if (slot < 0) for (int i = 0; i < MAX_SUBS; i++) if (!s->subs[i].used) { slot = i; break; }
+  if (slot < 0) return luaL_error(L, "too many subscriptions (max %d)", MAX_SUBS);
+  if (s->subs[slot].used) luaL_unref(L, LUA_REGISTRYINDEX, s->subs[slot].ref);
+  lua_pushvalue(L, 2);
+  s->subs[slot].used = true;
+  strncpy(s->subs[slot].topic, topic, sizeof(s->subs[slot].topic) - 1);
+  s->subs[slot].ref = luaL_ref(L, LUA_REGISTRYINDEX);
+  return 0;
+}
+static int l_bus_unsubscribe(lua_State* L) {
+  Script* s = me(L);
+  const char* topic = luaL_checkstring(L, 1);
+  for (auto& sub : s->subs) if (sub.used && !strcmp(sub.topic, topic)) { luaL_unref(L, LUA_REGISTRYINDEX, sub.ref); sub.used = false; }
+  return 0;
+}
+
+// يوزّع ما نُشر قبل هذه اللحظة فقط (لا حلقة لا نهائية بين سكريبتين يتبادلان الردود)
+static void busDrain() {
+  int n;
+  portENTER_CRITICAL(&busMux);
+  n = busCount;
+  portEXIT_CRITICAL(&busMux);
+  while (n-- > 0) {
+    BusEv e;
+    portENTER_CRITICAL(&busMux);
+    if (!busCount) { portEXIT_CRITICAL(&busMux); return; }
+    e = busq[busHead];
+    busHead = (busHead + 1) % BUS_Q;
+    busCount--;
+    portEXIT_CRITICAL(&busMux);
+    JsonDocument d;
+    bool ok = !deserializeJson(d, e.json);
+    for (auto& s : scripts) {
+      if (s.state != ST_RUN || !s.L || idxOf(&s) == e.src) continue;
+      for (int i = 0; i < MAX_SUBS && s.state == ST_RUN; i++) {
+        if (!s.subs[i].used || strcmp(s.subs[i].topic, e.topic)) continue;
+        lua_checkstack(s.L, 8);
+        lua_rawgeti(s.L, LUA_REGISTRYINDEX, s.subs[i].ref);
+        if (ok) pushVariant(s.L, d.as<JsonVariantConst>(), 0); else lua_pushnil(s.L);
+        protectedCall(&s, 1);
+      }
+    }
+  }
+}
+
 static void handleEvent(const UiEv& e) {
   if (e.panel >= MAX_PANELS || !panels[e.panel].used) return;
   Script* s = &scripts[panels[e.panel].owner];
@@ -750,6 +1000,7 @@ static void engineTask(void*) {
     }
     UiEv ev;
     while (xQueueReceive(evQ, &ev, 0) == pdTRUE) handleEvent(ev);
+    busDrain();
     for (auto& s : scripts) if (s.state == ST_RUN) tickScript(&s);
     // تحديث حالة الذاكرة للعرض
   }
@@ -920,6 +1171,8 @@ bool luaeng_delete(const char* name) {
   String b = String(SCRIPTS_DIR) + "/" + name;
   if (LittleFS.exists(b + ".lua")) LittleFS.remove(b + ".lua");
   if (LittleFS.exists(b + ".page")) LittleFS.remove(b + ".page");
+  String dp = kvPath(name);
+  if (LittleFS.exists(dp)) LittleFS.remove(dp);
   return true;
 }
 
@@ -949,4 +1202,26 @@ String luaeng_files_json() {
   }
   String out; serializeJson(d, out);
   return out;
+}
+
+// للطرفية: pub <topic> <value> (القيمة JSON صالح أو نص عادي)
+bool luaeng_bus_publish(const char* topic, const char* text) {
+  if (!safeName(topic, 16) || strlen(text) >= BUS_JSON - 2) return false;
+  JsonDocument d;
+  if (!deserializeJson(d, text)) return busPush(255, topic, text);
+  char q[BUS_JSON]; size_t n = 0;
+  q[n++] = '"';
+  for (const char* p = text; *p && n < sizeof(q) - 3; p++) {
+    if (*p == '"' || *p == '\\') q[n++] = '\\';
+    q[n++] = ((unsigned char)*p < 0x20) ? ' ' : *p;
+  }
+  q[n++] = '"'; q[n] = 0;
+  return busPush(255, topic, q);
+}
+
+// للطرفية: محتوى مخزن سكريبت كما هو محفوظ على الجهاز
+String luaeng_storage_dump(const char* name) {
+  if (!luaeng_valid_name(name)) return String("invalid name");
+  String t = readText(kvPath(name));
+  return t.length() ? t : String("(empty)");
 }

@@ -108,6 +108,38 @@ adc.atten(0, "11db")           -- مدى القياس الأوسع
 timer.every(2000, function()
   print(string.format("A0 = %d mV, up %ds", adc.read_mv(0), sys.uptime()))
 end)` },
+  'Storage: boot counter': { code:
+`-- القيم تبقى بعد إعادة التشغيل (ملف على الجهاز)
+local boots = storage.get("boots", 0) + 1
+storage.set("boots", boots)
+print("this script started", boots, "times")
+storage.set("last", sys.uptime())` },
+  'Storage: saved settings': { code:
+`-- شريط إعداد يتذكّر قيمته بعد الإقلاع
+local p = ui.panel("Saved settings")
+local limit = storage.get("limit", 30)
+p:label("info", "limit = " .. limit)
+p:slider("lim", "Alarm limit", 20, 45, function(v)
+  limit = v
+  storage.set("limit", v)
+  p:set("info", "limit = " .. v)
+end, limit)` },
+  'Bus: sender': { code:
+`-- يُرسل قيمًا لأي سكريبت مشترك (شغّل مثال Bus: receiver أيضًا)
+local n = 0
+timer.every(1000, function()
+  n = n + 1
+  bus.publish("temp", 25 + n % 5)
+  bus.publish("status", { ok = true, n = n })
+end)` },
+  'Bus: receiver': { code:
+`local p = ui.panel("Receiver")
+p:label("t", "--")
+p:label("s", "--")
+bus.subscribe("temp", function(v) p:set("t", "temp: " .. v) end)
+bus.subscribe("status", function(st)
+  p:set("s", "n=" .. st.n .. " ok=" .. tostring(st.ok))
+end)` },
   'Panel: أدوات جاهزة': { code:
 `-- لوحة بأدوات جاهزة: تظهر في تبويب اللوحات
 local p = ui.panel("Control")

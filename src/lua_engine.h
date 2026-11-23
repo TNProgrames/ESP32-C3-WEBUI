@@ -12,6 +12,8 @@ bool luaeng_save(const char* name, const char* code, size_t len, const char* pag
 bool luaeng_set_auto(const char* name, bool on);
 bool luaeng_delete(const char* name);
 String luaeng_files_json();
+bool luaeng_bus_publish(const char* topic, const char* text);
+String luaeng_storage_dump(const char* name);
 void luaeng_stop_all();
 String luaeng_list_text();                // عرض نصي للطرفية
 String luaeng_list_json();                // JSON للواجهة

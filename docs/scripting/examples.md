@@ -297,6 +297,77 @@ timer.every(2000, function()
 end)
 ```
 
+### 27) عدّاد إقلاعات محفوظ
+```lua
+local boots = storage.get("boots", 0) + 1
+storage.set("boots", boots)
+print("this script started", boots, "times")
+```
+شغّله، ثم أعد تشغيل السكريبت أو الجهاز: يزيد العدّاد (وفعّل «تشغيل تلقائي» ليعمل بعد الإقلاع).
+
+### 28) إعداد يتذكّره الجهاز: شريط حد التنبيه
+```lua
+local p = ui.panel("Saved settings")
+local limit = storage.get("limit", 30)
+p:label("info", "limit = " .. limit)
+p:slider("lim", "Alarm limit", 20, 45, function(v)
+  limit = v
+  storage.set("limit", v)            -- تُدمج الكتابة وتُحفظ بعد 3 ثوانٍ
+  p:set("info", "limit = " .. v)
+end, limit)
+```
+
+### 29) حفظ سجل صغير (آخر 5 قراءات) في storage
+```lua
+local function push(v)
+  for i = 1, 4 do storage.set("r" .. i, storage.get("r" .. (i + 1), 0)) end
+  storage.set("r5", v)
+end
+timer.every(5000, function()
+  push(adc.read_mv(0))
+  print(storage.get("r1"), storage.get("r2"), storage.get("r3"), storage.get("r4"), storage.get("r5"))
+end)
+```
+
+### 30) سكريبتان يتبادلان البيانات بـ bus
+**المرسل** (`sender`):
+```lua
+local n = 0
+timer.every(1000, function()
+  n = n + 1
+  bus.publish("temp", 25 + n % 5)               -- رقم
+  bus.publish("status", { ok = true, n = n })   -- جدول بسيط
+end)
+```
+**المستقبل** (`receiver`):
+```lua
+local p = ui.panel("Receiver")
+p:label("t", "--")
+p:label("s", "--")
+bus.subscribe("temp", function(v) p:set("t", "temp: " .. v) end)
+bus.subscribe("status", function(st)
+  p:set("s", "n=" .. st.n .. " ok=" .. tostring(st.ok))
+end)
+```
+شغّل كلًّا بالمختبر باسمه (اسمان مختلفان)، وانظر لوحة Receiver في تبويب اللوحات.
+
+### 31) فصل القراءة عن العرض: سكريبت للحساس وآخر للوحة
+```lua
+-- sensor: يقرأ ويبثّ فقط
+timer.every(1000, function() bus.publish("temp", adc.read_mv(0) / 10) end)
+```
+```lua
+-- display: يستقبل ويعرض ويقرّر التنبيه
+local p = ui.panel("Display")
+p:label("v", "--")
+gpio.mode(8, "out")
+bus.subscribe("temp", function(t)
+  p:set("v", string.format("%.1f C", t))
+  gpio.write(8, t > 30)
+end)
+```
+يمكن إيقاف سكريبت العرض وتعديله دون لمس الحساس، وتجرّب المستقبل من الطرفية: `pub temp 35`.
+
 ## صفحات مخصصة (طبقة iframe)
 
 الصفحة ملف HTML على الجهاز (`/ui/<name>.html`). في المختبر: فعّل "صفحة HTML مخصصة" واكتب المسار والمحتوى، فتُحفظ قبل التشغيل. داخل الصفحة الكائن `esp` (انظر [ui.md](ui.md)).
@@ -428,25 +499,6 @@ timer.every(2000, function()
   p:set("h", string.format("%.0f %%", r.hum))
   p:set("p", string.format("%.0f hPa", r.press))
 end)
-```
-
-## تبادل بين سكريبتين بـ bus
-```lua
--- حساس.lua
---@pins 0
-timer.every(1000, function() bus.publish("temp", adc.mv(0) / 10) end)
-
--- عرض.lua
-local box = ui.panel("العرض")
-box:label("v", "--")
-bus.subscribe("temp", function(v) box:set("v", string.format("%.1f", v)) end)
-```
-
-## عدّاد إقلاعات محفوظ
-```lua
-local n = storage.get("boots", 0) + 1
-storage.set("boots", n)
-log("boot number", n)
 ```
 
 ## شريط ليد WS2812 (يُنفَّذ في الفيرموير عبر RMT)

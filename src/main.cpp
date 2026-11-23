@@ -349,8 +349,15 @@ static String runCommand(String line) {
   arg.trim();
   c.toLowerCase();
 
-  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot\nscripts | run <name> | stop <name|all>";
+  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot\nscripts | run <name> | stop <name|all> | pub <topic> <value> | data <name>";
   if (c == "scripts") return luaeng_list_text();
+  if (c == "pub") {
+    int sp2 = arg.indexOf(' ');
+    if (sp2 < 0) return "usage: pub <topic> <value>";
+    String tp = arg.substring(0, sp2), val = arg.substring(sp2 + 1);
+    return luaeng_bus_publish(tp.c_str(), val.c_str()) ? String("published ") + tp : String("cannot publish (bad topic, too long or queue full)");
+  }
+  if (c == "data") return luaeng_storage_dump(arg.c_str());
   if (c == "run") return luaeng_run_file(arg.c_str()) ? String("started ") + arg : String("cannot run (need /scripts/") + arg + ".lua)";
   if (c == "stop") { if (arg == "all") { luaeng_stop_all(); return "stopping all"; } return luaeng_stop(arg.c_str()) ? String("stopping ") + arg : String("invalid name"); }
   if (c == "version") return String("firmware ") + FW_VERSION + "\nchip " + ESP.getChipModel() + " rev " + String(ESP.getChipRevision()) + "\nsdk " + ESP.getSdkVersion();
