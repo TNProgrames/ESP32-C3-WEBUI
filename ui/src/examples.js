@@ -261,7 +261,7 @@ timer.every(2000, function()
   print(line)
   if oled then
     oled:clear()
-    oled:text(0, 0, string.format("%.1f\194\176C", r.temp), 3)
+    oled:text(0, 0, string.format("%.1f\\194\\176C", r.temp), 3)
     oled:text(0, 32, string.format("%.0f hPa", r.press / 100), 2)
     oled:show()
   end
