@@ -71,6 +71,43 @@ export const examples = {
   'Timer': { code: `local n = 0\nlocal id\nid = timer.every(1000, function()\n  n = n + 1\n  print("tick", n)\n  if n == 5 then timer.cancel(id) print("done") end\nend)` },
   'ADC (GPIO0)': { code: `timer.every(1000, function()\n  print("adc", adc.read(0), adc.mv(0) .. " mV")\nend)` },
   'PWM (GPIO10)': { code: `local d = 0\ntimer.every(50, function()\n  d = (d + 5) % 105\n  pwm.set(10, 1000, d)\nend)` },
+  'Button: on_change': { code:
+`-- زر على GPIO4 (بين الرجل والأرضي) يبدّل ليد GPIO8
+gpio.mode(4, "in_pullup")
+gpio.mode(8, "out")
+gpio.on_change(4, function(v)
+  if v == 0 then          -- 0 = مضغوط
+    gpio.toggle(8)
+    print("pressed, led =", gpio.read(8))
+  end
+end, 30)                  -- تجاهل الارتداد 30ms` },
+  'Safe stop: on_stop': { code:
+`-- on_stop تُستدعى عند الإيقاف أو الاستبدال لإعادة الأرجل لحالة آمنة
+gpio.mode(8, "out")
+pwm.set(10, 1000, 50)
+timer.every(500, function() gpio.toggle(8) end)
+
+function on_stop()
+  gpio.write(8, 0)
+  pwm.stop(10)
+  print("stopped safely")
+end` },
+  'PWM: duty & stop': { code:
+`pwm.set(10, 1000, 0)           -- pin, freq, duty%
+local d, dir = 0, 10
+timer.every(100, function()
+  d = d + dir
+  if d >= 100 or d <= 0 then dir = -dir end
+  pwm.duty(10, d)               -- يغيّر النسبة فقط
+end)
+timer.after(10000, function() pwm.stop(10) print("pwm stopped") end)` },
+  'System info': { code:
+`print("firmware", sys.version())
+log("uptime", sys.uptime(), "s  heap", sys.heap())
+adc.atten(0, "11db")           -- مدى القياس الأوسع
+timer.every(2000, function()
+  print(string.format("A0 = %d mV, up %ds", adc.read_mv(0), sys.uptime()))
+end)` },
   'Panel: أدوات جاهزة': { code:
 `-- لوحة بأدوات جاهزة: تظهر في تبويب اللوحات
 local p = ui.panel("Control")

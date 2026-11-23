@@ -23,4 +23,5 @@ String luaeng_ui_poll_json(uint32_t since);
 bool luaeng_ui_event(int panel, const char* name, const char* valJson);
 
 // يُنفَّذ في main.cpp
+const char* luaeng_fw_version();
 void logPrintf(const char* fmt, ...);

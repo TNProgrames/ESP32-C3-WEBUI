@@ -66,6 +66,8 @@ void logPrintf(const char* fmt, ...) {
   portEXIT_CRITICAL(&logMux);
 }
 
+const char* luaeng_fw_version() { return FW_VERSION; }
+
 static uint32_t uptimeSec() { return (uint32_t)(esp_timer_get_time() / 1000000ULL); }
 
 // --- Login lockout & password reset (بزر فيزيائي) ---

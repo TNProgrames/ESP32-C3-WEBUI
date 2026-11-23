@@ -15,6 +15,7 @@ extern "C" {
 // ---------- حدود ----------
 #define MAX_SCRIPTS   3
 #define MAX_TIMERS    8
+#define MAX_WATCH     6
 #define NAME_LEN      24
 #define MEM_LIMIT     (48 * 1024)
 #define CALL_BUDGET   200      // ms كحد أقصى لكل استدعاء (حارس الحلقات اللانهائية)
@@ -24,6 +25,7 @@ extern "C" {
 
 enum { ST_FREE = 0, ST_RUN = 1, ST_ERR = 2 };
 
+struct LWatch { bool used; bool pending; uint8_t pin; uint8_t stable; uint8_t pendVal; uint16_t debounce; uint32_t changedAt; int ref; };
 struct LTimer { bool used; bool repeat; uint32_t period; uint32_t next; int ref; };
 
 struct Script {
@@ -35,6 +37,7 @@ struct Script {
   uint32_t  startMs;
   char      err[96];
   LTimer    timers[MAX_TIMERS];
+  LWatch    watches[MAX_WATCH];
 };
 
 static Script scripts[MAX_SCRIPTS];
@@ -122,9 +125,9 @@ static int l_gpio_mode(lua_State* L) {
   claimPin(L, p);
   if (!strcmp(m, "out")) pinMode(p, OUTPUT);
   else if (!strcmp(m, "in")) pinMode(p, INPUT);
-  else if (!strcmp(m, "pullup")) pinMode(p, INPUT_PULLUP);
-  else if (!strcmp(m, "pulldown")) pinMode(p, INPUT_PULLDOWN);
-  else return luaL_error(L, "mode must be out|in|pullup|pulldown");
+  else if (!strcmp(m, "pullup") || !strcmp(m, "in_pullup")) pinMode(p, INPUT_PULLUP);
+  else if (!strcmp(m, "pulldown") || !strcmp(m, "in_pulldown")) pinMode(p, INPUT_PULLDOWN);
+  else return luaL_error(L, "mode must be out|in|in_pullup|in_pulldown");
   return 0;
 }
 static int l_gpio_write(lua_State* L) {
@@ -173,6 +176,71 @@ static int l_pwm_set(lua_State* L) {
   ledcWrite(p, (uint32_t)(d * 1023.0f / 100.0f));
   return 0;
 }
+
+static int l_gpio_toggle(lua_State* L) {
+  int p = luaL_checkinteger(L, 1);
+  claimPin(L, p);
+  digitalWrite(p, digitalRead(p) ? LOW : HIGH);
+  return 0;
+}
+// gpio.on_change(pin, fn [, debounce_ms]): يُستدعى fn(value) عند استقرار القيمة الجديدة (فحص دوري كل ~10ms)
+static int l_gpio_on_change(lua_State* L) {
+  Script* s = me(L);
+  int p = luaL_checkinteger(L, 1);
+  luaL_checktype(L, 2, LUA_TFUNCTION);
+  lua_Integer db = luaL_optinteger(L, 3, 20);
+  if (db < 0 || db > 5000) return luaL_error(L, "debounce 0..5000 ms");
+  claimPin(L, p);
+  int slot = -1;
+  for (int i = 0; i < MAX_WATCH; i++) if (s->watches[i].used && s->watches[i].pin == p) slot = i;
+  if (slot < 0) for (int i = 0; i < MAX_WATCH; i++) if (!s->watches[i].used) { slot = i; break; }
+  if (slot < 0) return luaL_error(L, "too many watchers (max %d)", MAX_WATCH);
+  if (s->watches[slot].used) luaL_unref(L, LUA_REGISTRYINDEX, s->watches[slot].ref);
+  lua_pushvalue(L, 2);
+  s->watches[slot] = { true, false, (uint8_t)p, (uint8_t)digitalRead(p), 0, (uint16_t)db, 0, luaL_ref(L, LUA_REGISTRYINDEX) };
+  return 0;
+}
+static int l_gpio_off_change(lua_State* L) {
+  Script* s = me(L);
+  int p = luaL_checkinteger(L, 1);
+  for (auto& w : s->watches) if (w.used && w.pin == p) { luaL_unref(L, LUA_REGISTRYINDEX, w.ref); w.used = false; }
+  return 0;
+}
+static int l_adc_atten(lua_State* L) {
+  int p = luaL_checkinteger(L, 1);
+  const char* l = luaL_checkstring(L, 2);
+  if (p < 0 || p > 4) return luaL_error(L, "ADC only on GPIO0-4");
+  adc_attenuation_t a;
+  if (!strcmp(l, "0db")) a = ADC_0db;
+  else if (!strcmp(l, "2.5db")) a = ADC_2_5db;
+  else if (!strcmp(l, "6db")) a = ADC_6db;
+  else if (!strcmp(l, "11db")) a = ADC_11db;
+  else return luaL_error(L, "level must be 0db|2.5db|6db|11db");
+  claimPin(L, p);
+  analogSetPinAttenuation(p, a);
+  return 0;
+}
+static int findPwm(int p) { for (int i = 0; i < PWM_MAX; i++) if (pwmPins[i] == p + 1) return i; return -1; }
+static int l_pwm_stop(lua_State* L) {
+  int p = luaL_checkinteger(L, 1);
+  claimPin(L, p);
+  int slot = findPwm(p);
+  if (slot >= 0) { ledcDetach(p); pwmPins[slot] = 0; pinMode(p, OUTPUT); digitalWrite(p, LOW); }
+  return 0;
+}
+// pwm.duty(pin, percent): يغيّر النسبة فقط (بعد pwm.set)
+static int l_pwm_duty(lua_State* L) {
+  int p = luaL_checkinteger(L, 1);
+  lua_Number d = luaL_checknumber(L, 2);
+  if (d < 0) d = 0;
+  if (d > 100) d = 100;
+  claimPin(L, p);
+  if (findPwm(p) < 0) return luaL_error(L, "call pwm.set(pin, freq, duty) first");
+  ledcWrite(p, (uint32_t)(d * 1023.0f / 100.0f));
+  return 0;
+}
+static int l_sys_uptime(lua_State* L) { lua_pushinteger(L, (lua_Integer)(millis() / 1000)); return 1; }
+static int l_sys_version(lua_State* L) { lua_pushstring(L, luaeng_fw_version()); return 1; }
 static int l_sys_millis(lua_State* L) { lua_pushinteger(L, (lua_Integer)millis()); return 1; }
 static int l_sys_heap(lua_State* L) { lua_pushinteger(L, ESP.getFreeHeap()); return 1; }
 
@@ -461,6 +529,7 @@ static void releaseResources(Script* s) {
   if (s->L) { lua_close(s->L); s->L = nullptr; }
   s->mem = 0;
   memset(s->timers, 0, sizeof(s->timers));
+  memset(s->watches, 0, sizeof(s->watches));
 }
 
 static void failScript(Script* s, const char* msg) {
@@ -469,7 +538,14 @@ static void failScript(Script* s, const char* msg) {
   setStatus(s, ST_ERR, msg);
 }
 
+static bool protectedCall(Script* s, int nargs);
+
 static void killScript(Script* s) {
+  // on_stop(): فرصة لإعادة الأرجل لحالة آمنة قبل الإغلاق (عند الإيقاف أو الاستبدال، لا عند الخطأ)
+  if (s->state == ST_RUN && s->L) {
+    lua_getglobal(s->L, "on_stop");
+    if (lua_isfunction(s->L, -1)) protectedCall(s, 0); else lua_pop(s->L, 1);
+  }
   releaseResources(s);
   xSemaphoreTake(statusMux, portMAX_DELAY);
   s->state = ST_FREE; s->name[0] = 0; s->err[0] = 0;
@@ -511,12 +587,13 @@ static void startScript(const char* name, const char* code, size_t len) {
   for (const char* g : { "dofile", "loadfile", "load", "loadstring", "require" }) { lua_pushnil(L); lua_setglobal(L, g); }
   lua_getglobal(L, "string"); lua_pushnil(L); lua_setfield(L, -2, "dump"); lua_pop(L, 1);
   lua_pushcfunction(L, l_print); lua_setglobal(L, "print");
+  lua_pushcfunction(L, l_print); lua_setglobal(L, "log");
 
-  static const luaL_Reg gpioF[] = { {"mode", l_gpio_mode}, {"write", l_gpio_write}, {"read", l_gpio_read}, {NULL, NULL} };
-  static const luaL_Reg adcF[]  = { {"read", l_adc_read}, {"mv", l_adc_mv}, {NULL, NULL} };
-  static const luaL_Reg pwmF[]  = { {"set", l_pwm_set}, {NULL, NULL} };
+  static const luaL_Reg gpioF[] = { {"mode", l_gpio_mode}, {"write", l_gpio_write}, {"read", l_gpio_read}, {"toggle", l_gpio_toggle}, {"on_change", l_gpio_on_change}, {"off_change", l_gpio_off_change}, {NULL, NULL} };
+  static const luaL_Reg adcF[]  = { {"read", l_adc_read}, {"mv", l_adc_mv}, {"read_mv", l_adc_mv}, {"atten", l_adc_atten}, {NULL, NULL} };
+  static const luaL_Reg pwmF[]  = { {"set", l_pwm_set}, {"duty", l_pwm_duty}, {"stop", l_pwm_stop}, {NULL, NULL} };
   static const luaL_Reg timF[]  = { {"every", l_timer_every}, {"after", l_timer_after}, {"cancel", l_timer_cancel}, {NULL, NULL} };
-  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {NULL, NULL} };
+  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
   static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
   reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
   if (luaL_loadbufferx(L, UI_PRELUDE, sizeof(UI_PRELUDE) - 1, "=ui", "t") != LUA_OK || !protectedCall(s, 0)) {
@@ -536,6 +613,19 @@ static void startScript(const char* name, const char* code, size_t len) {
 
 static void tickScript(Script* s) {
   uint32_t now = millis();
+  for (int i = 0; i < MAX_WATCH && s->state == ST_RUN; i++) {
+    LWatch& w = s->watches[i];
+    if (!w.used) continue;
+    uint8_t v = (uint8_t)digitalRead(w.pin);
+    if (v == w.stable) { w.pending = false; continue; }
+    if (!w.pending || w.pendVal != v) { w.pending = true; w.pendVal = v; w.changedAt = now; }
+    if ((uint16_t)(now - w.changedAt) >= w.debounce || (now - w.changedAt) > 60000) {
+      w.stable = v; w.pending = false;
+      lua_rawgeti(s->L, LUA_REGISTRYINDEX, w.ref);
+      lua_pushinteger(s->L, v);
+      if (!protectedCall(s, 1)) return;
+    }
+  }
   for (int i = 0; i < MAX_TIMERS && s->state == ST_RUN; i++) {
     LTimer& t = s->timers[i];
     if (!t.used || (int32_t)(now - t.next) < 0) continue;

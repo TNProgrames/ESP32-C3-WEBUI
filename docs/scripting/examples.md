@@ -238,6 +238,65 @@ p:button("roll", "Roll", function() p:set("r", "dice: " .. math.random(1, 6)) en
 p:input("msg", "Say something", function(s) print("you said:", s) end, "hi")
 ```
 
+### 22) زر بحدث تغيّر (on_change) مع تجاهل الارتداد
+```lua
+gpio.mode(4, "in_pullup")
+gpio.mode(8, "out")
+gpio.on_change(4, function(v)
+  if v == 0 then                 -- 0 = مضغوط
+    gpio.toggle(8)
+    print("led =", gpio.read(8))
+  end
+end, 30)                         -- 30ms تجاهل ارتداد (الافتراضي 20)
+```
+
+### 23) ضغطة قصيرة وضغطة طويلة
+```lua
+gpio.mode(4, "in_pullup")
+local t0
+gpio.on_change(4, function(v)
+  if v == 0 then t0 = sys.millis()
+  else
+    local held = sys.millis() - t0
+    print(held > 800 and "long press" or "short press", held, "ms")
+  end
+end)
+```
+
+### 24) إيقاف آمن بـ on_stop
+```lua
+gpio.mode(8, "out")
+pwm.set(10, 1000, 50)
+timer.every(500, function() gpio.toggle(8) end)
+
+function on_stop()               -- تُستدعى عند الإيقاف أو استبدال السكريبت
+  gpio.write(8, 0)
+  pwm.stop(10)
+  print("stopped safely")
+end
+```
+
+### 25) تغيير نسبة PWM فقط وإيقافه لاحقًا
+```lua
+pwm.set(10, 1000, 0)             -- pin, freq, duty%
+local d, dir = 0, 10
+timer.every(100, function()
+  d = d + dir
+  if d >= 100 or d <= 0 then dir = -dir end
+  pwm.duty(10, d)
+end)
+timer.after(10000, function() pwm.stop(10) end)
+```
+
+### 26) معلومات النظام ومدى قياس ADC
+```lua
+print("firmware", sys.version())
+adc.atten(0, "11db")             -- 0db أدق لكن مداه أضيق (حتى ~0.95V)
+timer.every(2000, function()
+  log(string.format("A0 = %d mV  up %ds  heap %d", adc.read_mv(0), sys.uptime(), sys.heap()))
+end)
+```
+
 ## صفحات مخصصة (طبقة iframe)
 
 الصفحة ملف HTML على الجهاز (`/ui/<name>.html`). في المختبر: فعّل "صفحة HTML مخصصة" واكتب المسار والمحتوى، فتُحفظ قبل التشغيل. داخل الصفحة الكائن `esp` (انظر [ui.md](ui.md)).
@@ -339,17 +398,6 @@ p:emit("state", on)
 # الجزء 2: مخطَّط (يحتاج وحدات لم تُنفَّذ بعد)
 
 > هذه تصاميم للاتفاق على الشكل قبل التنفيذ، وقد تتغيّر الأسماء.
-
-## زر بحدث تغيّر (بدل القراءة الدورية)
-```lua
---@name زر
---@pins 4,8
-gpio.mode(8, "out")
-gpio.mode(4, "in_pullup")
-gpio.on_change(4, function(v)
-  gpio.write(8, v == 0 and 1 or 0)   -- الزر مضغوط = 0
-end)
-```
 
 ## شاشة OLED عبر I2C
 ```lua
