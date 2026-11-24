@@ -927,6 +927,40 @@ void setupServerWeb() {
     request->send(ok ? 200 : 503, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
   });
 
+  // ---- الدرايفرات الموقّعة (.drv) ----
+  server.on("/drv/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    request->send(200, "application/json", drv_list_json());
+  });
+  server.on("/drv/install", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    // الجسم = ملف .drv خام (application/octet-stream)؛ يتحقق الفيرموير من التوقيع قبل أي حفظ
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (total == 0 || total > DRV_MAX_FILE) { if (index == 0) request->send(413, "application/json", "{\"ok\":false,\"error\":\"too large\"}"); return; }
+    if (index == 0) {
+      request->_tempObject = malloc(total);
+      if (!request->_tempObject) { request->send(500, "application/json", "{\"ok\":false,\"error\":\"no memory\"}"); return; }
+    }
+    uint8_t* buf = (uint8_t*)request->_tempObject;
+    if (!buf) return;
+    memcpy(buf + index, data, len);
+    if (index + len < total) return;
+    String err;
+    bool ok = drv_install(buf, total, &err);
+    JsonDocument d; d["ok"] = ok; if (!ok) d["error"] = err;
+    String out; serializeJson(d, out);
+    request->send(ok ? 200 : 400, "application/json", out);
+  });
+  server.on("/drv/remove", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    String n = request->hasParam("name") ? request->getParam("name")->value() : String("");
+    String err;
+    bool ok = drv_remove(n.c_str(), &err);
+    JsonDocument d; d["ok"] = ok; if (!ok) d["error"] = err;
+    String out; serializeJson(d, out);
+    request->send(ok ? 200 : 400, "application/json", out);
+  });
+
   server.on("/script/files", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
     request->send(200, "application/json", luaeng_files_json());

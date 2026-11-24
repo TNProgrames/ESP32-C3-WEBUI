@@ -13,8 +13,10 @@ void drv_boot_load();                                            // عند ال�
 bool drv_install(const uint8_t* buf, size_t len, String* err);   // يتحقق ثم يحفظ ثم يحمّل (يستبدل النسخة القديمة إن لم تكن مستعملة)
 bool drv_remove(const char* name, String* err);                  // يفرغ من الذاكرة ويحذف الملف
 const DrvEntry* drv_find(const char* name);
-const DrvEntry* drv_at(int slot);                                // للمرور على المحمَّل (nullptr إن كان الموضع فارغًا)
-DrvEntry* drv_find_mut(const char* name);
+struct DrvBrief { char name[16]; char version[8]; char info[48]; };
+int drv_snapshot(DrvBrief* out, int max);                        // نسخة آمنة من قائمة المحمَّل
+DrvEntry* drv_acquire(const char* name);                         // يحجز الدرايفر (users++) أو nullptr
+void drv_release(DrvEntry* e);                                   // يفك الحجز (users--)
 String drv_list_json();
 String drv_list_text();
 bool drv_valid_name(const char* name);

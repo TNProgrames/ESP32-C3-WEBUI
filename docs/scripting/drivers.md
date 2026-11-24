@@ -9,7 +9,7 @@
 |---|---|---|
 | 1 | تنسيق `.drv` + توقيع ECDSA P-256 + محمّل في الفيرموير + أداة بناء (`tools/drv`) + درايفر `lcd1602` | ✅ (اختُبر بمحاكي RISC-V على الحاسوب، لم يُجرَّب على العتاد) |
 | 2 | جدول الدوال الموحّد + جسر Lua: `drv.open` و`drv.list` و`d:method()` و`d:close()` وواجهة I2C الحقيقية للدرايفر، وإغلاق تلقائي عند إيقاف السكريبت | ✅ (يُبنى على GitHub، لم يُجرَّب على العتاد) |
-| 3 | مسارات HTTP: `/drv/list` و`/drv/install` (رفع) و`/drv/remove` + أوامر الطرفية | 🕒 |
+| 3 | مسارات HTTP: `/drv/list` و`/drv/install` (رفع) و`/drv/remove` + أمر الطرفية `drivers` | ✅ (يُبنى على GitHub، لم يُجرَّب على العتاد) |
 | 4 | تبويب «درايفرات» في الواجهة: فهرس `index.json` من GitHub Releases (يجلبه المتصفح لا الجهاز) + رفع ملف يدوي + عرض المساحة والإصدار + مثال Lua لكل درايفر | 🕒 |
 | 5 | مزيد من الدرايفرات: `ssd1306` (إطار داخلي ودوال `text/line/rect/circle/bar/show`) · `bme280` · وحدة SPI ثم `st7789` · ثم WS2812 وDHT وIR | 🕒 |
 | 6 | CI يبني الدرايفرات ويوقّعها وينشرها مع `index.json`، وإصدار `v0.6.0` | 🕒 |
@@ -51,6 +51,17 @@
 - القيم: `nil` `bool` `int` (32 بت) `str` `blob`. النصوص حتى 4096 بايت. **بلا float**: الدرايفر يعيد أعدادًا صحيحة بوحدات مثبّتة.
 - لا مكتبة C: `tools/drv/drvrt.h` يوفّر `memcpy memset strlen strcmp` ومساعدات قراءة الإعداد (`drv_cfg_int`).
 - القالب: `drivers/lcd1602/lcd1602.c`.
+
+## مسارات HTTP (للمدير فقط، رأسا `User_Token` و`User_Role`)
+
+| المسار | الوصف |
+|---|---|
+| `GET /drv/list` | المثبّت: `name` `version` `size` `mem` `users` `info` و`methods` (الاسم وسلسلة الأنواع) |
+| `POST /drv/install` | الجسم = ملف `.drv` خام (`application/octet-stream`، حتى 24KB). يتحقق الجهاز من التوقيع ثم يحفظه في `/drivers` ويحمّله. يعيد `{ok}` أو `{ok:false,error}` |
+| `POST /drv/remove?name=` | يفرغه من الذاكرة ويحذف الملف |
+
+أخطاء التثبيت: `bad size` · `bad magic` · `bad format` · `api version mismatch` · `bad layout` · `bad entry` · `size mismatch` · `bad name` · **`bad signature`** · `bad relocation` · `driver in use` · `too many drivers` · `no executable memory` · `bad driver ops` · `no space`.
+التثبيت فوق نسخة مفتوحة يُرفض (`driver in use`). وقائمة المحمَّل محمية بقفل لأن الخادم والمحرك مهمتان منفصلتان.
 
 ## بناء درايفر
 

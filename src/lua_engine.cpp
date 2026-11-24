@@ -1223,7 +1223,7 @@ static void drvClose(lua_State* L, DrvHandle* h) {
   g_drvScript = s; g_drvErr = 0;
   h->e->ops->close(h->ctx);
   g_drvScript = nullptr;
-  if (h->e->users > 0) h->e->users--;
+  drv_release(h->e);
   if (s->drvOpen > 0) s->drvOpen--;
   h->e = nullptr; h->ctx = nullptr;
 }
@@ -1233,8 +1233,6 @@ static int l_drv_open(lua_State* L) {
   const char* name = luaL_checkstring(L, 1);
   bool hasCfg = !lua_isnoneornil(L, 2);
   if (hasCfg) luaL_checktype(L, 2, LUA_TTABLE);
-  DrvEntry* e = drv_find_mut(name);
-  if (!e) return failResult(L, "driver_not_installed");
   if (s->drvOpen >= DRV_HANDLES_PER_SCRIPT) return luaL_error(L, "too many open drivers (max %d)", DRV_HANDLES_PER_SCRIPT);
   drv_kv_t cfg[DRV_MAX_ARGS]; int nc = 0;
   if (hasCfg) {
@@ -1253,6 +1251,8 @@ static int l_drv_open(lua_State* L) {
       lua_pop(L, 1);
     }
   }
+  DrvEntry* e = drv_acquire(name);        // يحجز الدرايفر فلا يُحذف أو يُستبدل أثناء الاستعمال
+  if (!e) return failResult(L, "driver_not_installed");
   void* ctx = nullptr; int rc;
   {
     IoTimer t(s);
@@ -1261,11 +1261,12 @@ static int l_drv_open(lua_State* L) {
     g_drvScript = nullptr;
   }
   if (rc) {
+    drv_release(e);
     int c = g_drvErr ? g_drvErr : rc;
     return failResult(L, (c == 2 || c == 3 || c == 5 || c == 7 || c == 8) ? i2cErr(c) : "device_error");
   }
   DrvHandle* h = (DrvHandle*)lua_newuserdatauv(L, sizeof(DrvHandle), 1);
-  h->e = e; h->ctx = ctx; e->users++; s->drvOpen++;
+  h->e = e; h->ctx = ctx; s->drvOpen++;
   luaL_setmetatable(L, DRV_MT);
   lua_newtable(L);                    // ذاكرة مؤقتة للدوال المنشأة
   lua_setiuservalue(L, -2, 1);
@@ -1345,14 +1346,15 @@ static int l_drv_tostring(lua_State* L) {
 }
 
 static int l_drv_list(lua_State* L) {
-  lua_newtable(L); int n = 0;
-  for (int i = 0; i < DRV_MAX_LOADED; i++) {
-    const DrvEntry* d = drv_at(i); if (!d) continue;
+  DrvBrief b[DRV_MAX_LOADED];
+  int cnt = drv_snapshot(b, DRV_MAX_LOADED);      // النسخ تحت القفل ثم نبني جدول Lua بلا قفل
+  lua_newtable(L);
+  for (int i = 0; i < cnt; i++) {
     lua_newtable(L);
-    lua_pushstring(L, d->name); lua_setfield(L, -2, "name");
-    lua_pushstring(L, d->version); lua_setfield(L, -2, "version");
-    lua_pushstring(L, d->ops->info); lua_setfield(L, -2, "info");
-    lua_rawseti(L, -2, ++n);
+    lua_pushstring(L, b[i].name); lua_setfield(L, -2, "name");
+    lua_pushstring(L, b[i].version); lua_setfield(L, -2, "version");
+    lua_pushstring(L, b[i].info); lua_setfield(L, -2, "info");
+    lua_rawseti(L, -2, i + 1);
   }
   return 1;
 }

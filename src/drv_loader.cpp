@@ -8,6 +8,8 @@
 #include <mbedtls/bignum.h>
 #include <ArduinoJson.h>
 #include <string.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // تنسيق الملف (little-endian)  — يطابق tools/drv/build_drv.py
 //  0 "ESPD" | 4 u16 fmt=1 | 6 u16 api | 8 u32 entry | 12 u32 image_len | 16 u32 mem_len | 20 u32 nreloc
@@ -15,6 +17,9 @@
 #define HDR 64
 #define SIG 64
 
+// السجل تلمسه مهمتان (خادم الويب والمحرك) فيُحمى بقفل متداخل
+static SemaphoreHandle_t g_mux = nullptr;
+struct Lock { Lock() { if (g_mux) xSemaphoreTakeRecursive(g_mux, portMAX_DELAY); } ~Lock() { if (g_mux) xSemaphoreGiveRecursive(g_mux); } };
 static DrvEntry g_drv[DRV_MAX_LOADED];
 static bool g_used[DRV_MAX_LOADED];
 
@@ -70,9 +75,24 @@ static int slotOf(const char* name) {
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i] && !strcmp(g_drv[i].name, name)) return i;
   return -1;
 }
-const DrvEntry* drv_at(int i) { return (i >= 0 && i < DRV_MAX_LOADED && g_used[i]) ? &g_drv[i] : nullptr; }
-const DrvEntry* drv_find(const char* name) { int i = slotOf(name); return i < 0 ? nullptr : &g_drv[i]; }
-DrvEntry* drv_find_mut(const char* name) { int i = slotOf(name); return i < 0 ? nullptr : &g_drv[i]; }
+const DrvEntry* drv_find(const char* name) { Lock l; int i = slotOf(name); return i < 0 ? nullptr : &g_drv[i]; }
+DrvEntry* drv_acquire(const char* name) {
+  Lock l; int i = slotOf(name);
+  if (i < 0) return nullptr;
+  g_drv[i].users++;
+  return &g_drv[i];
+}
+void drv_release(DrvEntry* e) { Lock l; if (e && e->users > 0) e->users--; }
+int drv_snapshot(DrvBrief* out, int max) {
+  Lock l; int n = 0;
+  for (int i = 0; i < DRV_MAX_LOADED && n < max; i++) if (g_used[i]) {
+    strncpy(out[n].name, g_drv[i].name, 15); out[n].name[15] = 0;
+    strncpy(out[n].version, g_drv[i].version, 7); out[n].version[7] = 0;
+    strncpy(out[n].info, g_drv[i].ops->info ? g_drv[i].ops->info : "", 47); out[n].info[47] = 0;
+    n++;
+  }
+  return n;
+}
 
 static void unloadSlot(int i) {
   if (g_drv[i].mem) heap_caps_free(g_drv[i].mem);
@@ -137,6 +157,7 @@ static uint8_t* readFile(const String& path, size_t* n) {
 // حماية: يُكتب اسم الملف قبل تحميله ويُمحى بعده. إن بقي عند الإقلاع فقد انهار الجهاز أثناء تحميله فيُحجَر.
 #define LOADING_MARK DRV_DIR "/.loading"
 void drv_boot_load() {
+  if (!g_mux) g_mux = xSemaphoreCreateRecursiveMutex();
   if (!LittleFS.exists(DRV_DIR)) return;
   if (LittleFS.exists(LOADING_MARK)) {
     File m = LittleFS.open(LOADING_MARK, "r");
@@ -163,8 +184,10 @@ void drv_boot_load() {
 }
 
 bool drv_install(const uint8_t* buf, size_t len, String* err) {
+  Lock l;
   Parsed p;
   if (!parse(buf, len, &p, err)) return false;
+  if (LittleFS.totalBytes() - LittleFS.usedBytes() < len + 4096) { if (err) *err = "no space"; return false; }
   if (!LittleFS.exists(DRV_DIR)) LittleFS.mkdir(DRV_DIR);
   String path = String(DRV_DIR "/") + p.name + ".drv";
   if (!loadBuf(buf, len, len, err)) return false;          // يرفض إن كان مستعملًا قبل أن نلمس الملف
@@ -175,6 +198,7 @@ bool drv_install(const uint8_t* buf, size_t len, String* err) {
 }
 
 bool drv_remove(const char* name, String* err) {
+  Lock l;
   if (!drv_valid_name(name)) { if (err) *err = "bad name"; return false; }
   int i = slotOf(name);
   if (i >= 0) {
@@ -186,6 +210,7 @@ bool drv_remove(const char* name, String* err) {
 }
 
 String drv_list_json() {
+  Lock l;
   JsonDocument d; JsonArray a = d.to<JsonArray>();
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i]) {
     JsonObject o = a.add<JsonObject>();
@@ -200,6 +225,7 @@ String drv_list_json() {
   String s; serializeJson(d, s); return s;
 }
 String drv_list_text() {
+  Lock l;
   String s;
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i])
     s += String(g_drv[i].name) + " v" + g_drv[i].version + "  file=" + g_drv[i].fileSize + "B ram=" + g_drv[i].memSize + "B users=" + g_drv[i].users + "\n";
