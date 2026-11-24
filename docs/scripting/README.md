@@ -39,6 +39,7 @@
 | [i2c.md](i2c.md) | ناقل I2C (منفَّذ) |
 | [spi.md](spi.md) · [uart.md](uart.md) | الناقلات (مخطّطة) |
 | [timing.md](timing.md) | البروتوكولات الحساسة للتوقيت (مخطّط) |
+| [../ARCHITECTURE.md](../ARCHITECTURE.md) | البنية ثلاثية الطبقات والعقد الموحّد للدرايفرات |
 | [drivers.md](drivers.md) | الدرايفرات الموقّعة والمراحل، و`require` |
 
 ## القاعدة الذهبية
