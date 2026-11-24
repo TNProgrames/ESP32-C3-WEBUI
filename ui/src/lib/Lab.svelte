@@ -1,6 +1,5 @@
 <script>
   import { api, apiRaw, authHeaders, ApiError } from '../api.js';
-  import { drivers } from '../drivers.js';
   import { t } from '../store.svelte.js';
   import { examples } from '../examples.js';
   import { lab, persistLab } from '../lab.svelte.js';
@@ -117,14 +116,6 @@
       document.getElementById('lab-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) { fail(e, t('تعذر فتح الملف')); }
   }
-  async function installDrivers() {
-    busy = true;
-    try {
-      for (const [n, src] of Object.entries(drivers)) await apiRaw('/script/run?lib=1&name=' + n, src);
-      say(t('تم تثبيت السائقات') + ': ' + Object.keys(drivers).join(', '));
-    } catch (e) { fail(e, t('تعذر التثبيت')); }
-    busy = false; setTimeout(refresh, 300);
-  }
   function delLib(n) { if (confirm(t('حذف المكتبة') + ' ' + n + '؟')) call('/script/dellib?name=' + encodeURIComponent(n), t('تعذر الحذف')); }
 
   function load(e) {
@@ -210,8 +201,7 @@
 </div>
 
 <div class="glass">
-  <h3 style="margin:0 0 10px">📦 {t('المكتبات')} <span style="font-size:12px;color:var(--muted)">/scripts/lib · require("name")</span>
-    <button class="btn ghost" style="float:inline-end" disabled={busy} onclick={installDrivers}>⬇️ {t('تثبيت السائقات')}</button></h3>
+  <h3 style="margin:0 0 10px">📦 {t('المكتبات')} <span style="font-size:12px;color:var(--muted)">/scripts/lib · require("name")</span></h3>
   {#if !lab.libs.length}
     <div style="color:var(--muted);font-size:13px">{t('لا توجد مكتبات. فعّل «حفظ كمكتبة» واحفظ ملفًا ثم استعمله بـ require.')}</div>
   {/if}

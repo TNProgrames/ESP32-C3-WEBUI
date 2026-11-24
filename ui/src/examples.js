@@ -1,4 +1,3 @@
-import { drivers } from './drivers.js';
 // أمثلة المختبر. كل مثال: سكريبت Lua، وصفحة HTML اختيارية تُحفظ على الجهاز قبل التشغيل.
 const GAUGE_PAGE = `<!doctype html>
 <meta charset="utf-8">
@@ -227,44 +226,5 @@ timer.every(200, function()
   x = x + 0.15
   p:emit("sample", 50 + 40 * math.sin(x) * math.cos(x / 3))
 end)`, page: { path: '/ui/chart.html', html: CHART_PAGE } },
-  'Library: ssd1306 (OLED driver)': { lib: true, libName: 'ssd1306', code: drivers.ssd1306 },
-  'Library: bme280 (sensor driver)': { lib: true, libName: 'bme280', code: drivers.bme280 },
-  'OLED: Hello + uptime': { code:
-`-- يتطلب مكتبة ssd1306 (زر «تثبيت السائقات»). SDA=GPIO8، SCL=GPIO9
-i2c.begin(8, 9, 400000)
-local oled, err = require("ssd1306").new({w = 128, h = 64})
-if not oled then print("OLED:", err) return end
-timer.every(1000, function()
-  oled:clear()
-  oled:text(0, 0, "Hello ESP32-C3", 2)
-  oled:text(0, 24, "uptime " .. sys.uptime() .. "s")
-  oled:bar(0, 40, 128, 8, (sys.uptime() % 60) * 100 // 60)
-  oled:rect(0, 54, 128, 10)
-  oled:text(2, 56, "heap " .. sys.heap())
-  oled:show()
-end)
-on_stop(function() oled:clear() oled:show() end)` },
-  'BME280: قراءة + OLED': { code:
-`-- يتطلب مكتبتي bme280 و ssd1306. الحساس 0x76 والشاشة 0x3C على نفس الناقل
-i2c.begin(8, 9, 400000)
-local sensor, e1 = require("bme280").new()
-if not sensor then print("BME280:", e1) return end
-local oled = require("ssd1306").new({w = 128, h = 64})
-local p = ui.panel("Weather")
-p:label("t", "--")
-timer.every(2000, function()
-  local r = sensor:read()
-  if not r then return end
-  local line = string.format("%.1f C  %.0f hPa", r.temp, r.press / 100)
-  if r.hum then line = line .. string.format("  %.0f%%", r.hum) end
-  p:set("t", line)
-  print(line)
-  if oled then
-    oled:clear()
-    oled:text(0, 0, string.format("%.1f\\194\\176C", r.temp), 3)
-    oled:text(0, 32, string.format("%.0f hPa", r.press / 100), 2)
-    oled:show()
-  end
-end)` },
   'Error test (حلقة لا نهائية)': { code: `-- يجب أن يوقفها الحارس بعد 200ms\nwhile true do end` }
 };

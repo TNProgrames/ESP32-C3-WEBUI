@@ -539,34 +539,33 @@ p:emit("state", on)
 
 > هذه تصاميم للاتفاق على الشكل قبل التنفيذ، وقد تتغيّر الأسماء.
 
-## شاشة OLED عبر I2C
+## شاشة حروف LCD1602 عبر I2C (درايفر موقّع `lcd1602`)
 ```lua
---@name ساعة
---@pins 6,7
---@needs i2c
-local ssd1306 = require("lib/ssd1306")
-i2c.begin(6, 7, 400000)
-local oled = ssd1306.new(0x3C, 128, 64)
-
+i2c.begin(8, 9, 100000)
+local lcd, err = drv.open("lcd1602", {addr = 0x27})
+if not lcd then print("LCD:", err) return end
+lcd:clear()
 timer.every(1000, function()
-  oled:clear()
-  oled:text(0, 0, "up: " .. sys.millis() // 1000 .. "s")
-  oled:show()
+  lcd:text(0, 0, "Hello ESP32-C3")
+  lcd:text(1, 0, "up " .. sys.uptime() .. "s   ")
 end)
+on_stop(function() lcd:clear() end)
 ```
 
-## حساس حرارة ورطوبة وضغط BME280 + لوحة
+## شاشة OLED وحساس BME280 (درايفران موقّعان، المرحلة 5)
 ```lua
---@pins 6,7
---@needs i2c
-local bme = require("lib/bme280").new(0x76)
+i2c.begin(8, 9, 400000)
+local oled = drv.open("ssd1306", {addr = 0x3C, w = 128, h = 64})
+local bme  = drv.open("bme280", {addr = 0x76})
 local p = ui.panel("Weather")
-p:label("t", "--"); p:label("h", "--"); p:label("p", "--")
+p:label("t", "--")
 timer.every(2000, function()
-  local r = bme:read()
-  p:set("t", string.format("%.1f C", r.temp))
-  p:set("h", string.format("%.0f %%", r.hum))
-  p:set("p", string.format("%.0f hPa", r.press))
+  local t, pr, h = bme:read()          -- أعداد صحيحة: t بمئات الدرجة، pr بالباسكال، h بالألف من %
+  if not t then return end
+  p:set("t", string.format("%.1f C  %d hPa", t / 100, pr // 100))
+  oled:clear()
+  oled:text(0, 0, string.format("%.1f C", t / 100), 3)
+  oled:show()                          -- الإطار داخل الدرايفر نفسه
 end)
 ```
 
