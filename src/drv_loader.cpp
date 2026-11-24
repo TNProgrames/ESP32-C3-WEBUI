@@ -111,16 +111,19 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
-  uint8_t* mem = (uint8_t*)heap_caps_malloc((p.memLen + 15) & ~15u, MALLOC_CAP_EXEC);
+  // ESP32-C3 مع Arduino: لا ذاكرة MALLOC_CAP_EXEC متاحة (free=0). لكن SRAM نفسها ظاهرة مرتين:
+  // عبر ناقل البيانات 0x3FC8xxxx وعبر ناقل التعليمات 0x4038xxxx (فرق ثابت). نحجز من الكومة العادية،
+  // وتبقى مؤشرات البيانات على عنوان البيانات، أما مؤشرات الشيفرة التي يستدعيها الفيرموير فتُحوَّل لعنوان التعليمات.
+  size_t sz = (p.memLen + 15) & ~15u;
+  uint8_t* mem = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_EXEC);
+  uint32_t codeOff = 0;
   if (!mem) {
-    // تشخيص: كم متاح فعليًا من الذاكرة القابلة للتنفيذ؟
-    static char msg[64];
-    snprintf(msg, sizeof msg, "no executable memory (need %u, free %u, max %u)", (unsigned)p.memLen,
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_EXEC), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_EXEC));
-    Serial.println(msg);
-    if (err) *err = msg;
-    return false;
+    mem = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    uint32_t a0 = (uint32_t)(uintptr_t)mem;
+    if (mem && a0 >= 0x3FC80000u && a0 + sz <= 0x3FCE0000u) codeOff = 0x700000u;
+    else { if (mem) heap_caps_free(mem); mem = nullptr; }
   }
+  if (!mem) { if (err) *err = "no executable memory"; return false; }
   memcpy(mem, b + HDR, p.imgLen);
   if (p.memLen > p.imgLen) memset(mem + p.imgLen, 0, p.memLen - p.imgLen);
   const uint8_t* rel = b + HDR + p.imgLen;
@@ -131,7 +134,9 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     memcpy(mem + off, &v, 4);
   }
   asm volatile("fence.i" ::: "memory");
-  const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry))();
+  const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry + codeOff))();
+  if (codeOff && ops && (uintptr_t)ops >= (uintptr_t)mem + codeOff && (uintptr_t)ops < (uintptr_t)mem + codeOff + sz)
+    ops = (const drv_ops_t*)((uintptr_t)ops - codeOff);   // العنوان المحسوب نسبةً للـpc يقع في فضاء التعليمات
   bool good = ops && ops->version == DRV_API_VERSION && ops->open && ops->close && ops->methods && ops->nmethods > 0 && ops->nmethods <= 16;
   for (int i = 0; good && i < ops->nmethods; i++) {
     const drv_method_t& m = ops->methods[i];
@@ -142,6 +147,10 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
       if (l != 'i' && l != 's' && l != 'b' && l != 'd') good = false;
       if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;   // الإلزامي قبل الاختياري
     }
+  }
+  if (good && codeOff) {   // حوّل مؤشرات الشيفرة (open/close/fn) إلى عنوان التعليمات
+    drv_ops_t* wo = (drv_ops_t*)ops; wo->open = (decltype(wo->open))((uintptr_t)wo->open + codeOff); wo->close = (decltype(wo->close))((uintptr_t)wo->close + codeOff);
+    for (int i = 0; i < ops->nmethods; i++) { drv_method_t* wm = (drv_method_t*)&ops->methods[i]; wm->fn = (decltype(wm->fn))((uintptr_t)wm->fn + codeOff); }
   }
   if (!good) { heap_caps_free(mem); if (err) *err = "bad driver ops"; return false; }
   DrvEntry& d = g_drv[slot];
