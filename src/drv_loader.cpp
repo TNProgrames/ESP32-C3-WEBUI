@@ -111,8 +111,16 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
-  uint8_t* mem = (uint8_t*)heap_caps_malloc((p.memLen + 15) & ~15u, MALLOC_CAP_EXEC | MALLOC_CAP_INTERNAL);
-  if (!mem) { if (err) *err = "no executable memory"; return false; }
+  uint8_t* mem = (uint8_t*)heap_caps_malloc((p.memLen + 15) & ~15u, MALLOC_CAP_EXEC);
+  if (!mem) {
+    // تشخيص: كم متاح فعليًا من الذاكرة القابلة للتنفيذ؟
+    static char msg[64];
+    snprintf(msg, sizeof msg, "no executable memory (need %u, free %u, max %u)", (unsigned)p.memLen,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_EXEC), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_EXEC));
+    Serial.println(msg);
+    if (err) *err = msg;
+    return false;
+  }
   memcpy(mem, b + HDR, p.imgLen);
   if (p.memLen > p.imgLen) memset(mem + p.imgLen, 0, p.memLen - p.imgLen);
   const uint8_t* rel = b + HDR + p.imgLen;
