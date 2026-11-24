@@ -10,6 +10,7 @@
   import Terminal from './lib/Terminal.svelte';
   import Ota from './lib/Ota.svelte';
   import Lab from './lib/Lab.svelte';
+  import Drivers from './lib/Drivers.svelte';
   import Panels from './lib/Panels.svelte';
   import Toggles from './lib/Toggles.svelte';
 
@@ -24,6 +25,7 @@
     { id: 'backup', icon: '💾', label: 'نسخ احتياطي', admin: true },
     { id: 'term', icon: '💻', label: 'الطرفية', admin: true },
     { id: 'lab', icon: '🧪', label: 'مختبر Lua', admin: true },
+    { id: 'drivers', icon: '🔌', label: 'درايفرات', admin: true },
     { id: 'panels', icon: '🪟', label: 'اللوحات', admin: true },
     { id: 'ota', icon: '⬆️', label: 'تحديث', admin: true }
   ];
@@ -55,6 +57,7 @@
     {:else if tab === 'backup'}<Backup />
     {:else if tab === 'term'}<Terminal />
     {:else if tab === 'lab'}<Lab go={(id) => (tab = id)} />
+    {:else if tab === 'drivers'}<Drivers go={(id) => (tab = id)} />
     {:else if tab === 'panels'}<Panels />
     {:else if tab === 'ota'}<Ota />
     {/if}

@@ -4,6 +4,14 @@ export const en = {
   'مدير': 'Admin', 'مستخدم': 'User', 'خروج': 'Logout',
   'الحالة': 'Status', 'الواي فاي': 'WiFi', 'الاتصال': 'Connection', 'كلمات المرور': 'Passwords',
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
+  // Drivers
+  'درايفرات': 'Drivers',
+  'درايفرات موقّعة تُحمَّل عند الإقلاع. سكريبت Lua يستعملها بـ drv.open(...) ولا يلمس العتاد مباشرة.': 'Signed drivers loaded at boot. Lua scripts use them with drv.open(...) and never touch the hardware directly.',
+  'لا توجد درايفرات مثبّتة': 'No drivers installed', 'مفتوح': 'in use', 'رفع ملف درايفر': 'Upload a driver file',
+  'تثبيت': 'Install', 'تم التثبيت': 'Installed', 'تعذر التثبيت': 'Install failed', 'حذف الدرايفر': 'Delete driver', 'تم الحذف': 'Deleted',
+  'المتجر': 'Store', 'جلب': 'Fetch', 'الفهرس فارغ': 'The index is empty', 'مثبّت': 'Installed',
+  'تعذر جلب الفهرس (يلزم اتصال بالإنترنت)': 'Could not fetch the index (internet required)', 'تعذر التنزيل': 'Download failed',
+  'اختبار': 'Test', 'معامل': 'Argument', 'اختياري': 'optional', 'فتح في المختبر': 'Open in Lab',
   // Lab
   'مختبر Lua': 'Lua Lab',
   'اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, ui, print.': 'Write a Lua script and run it on the device. Available: gpio, adc, pwm, timer, sys, ui, print.',

@@ -1,0 +1,10 @@
+[
+  {
+    "name": "lcd1602",
+    "version": "1.1",
+    "api": 1,
+    "size": 2576,
+    "sha256": "768b39cd30e3e72539e568fa480489d1a04a2376d8968ee2e05fb03814ac27f6",
+    "file": "build/lcd1602.drv"
+  }
+]
