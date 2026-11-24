@@ -129,22 +129,23 @@ if __name__ == '__main__':
     # 2) تشغيل lcd1602 بـ API وهمي
     cpu, info = load(blob)
     ops = cpu.run(BASE + info['entry'], [])
-    ver, nameptr, f_open, f_close, f_call = [cpu.lw(ops + 4 * i) for i in range(5)]
-    assert ver == 1
+    ver, nameptr, infoptr, mptr, nmeth, f_open, f_close = [cpu.lw(ops + 4 * i) for i in range(7)]
+    assert ver == 1 and nmeth == 4
+    def cs(addr):
+        e = addr - BASE
+        return cpu.m[e:cpu.m.index(0, e)].decode()
+    methods = {cs(cpu.lw(mptr + 12 * k)): (cs(cpu.lw(mptr + 12 * k + 4)), cpu.lw(mptr + 12 * k + 8)) for k in range(nmeth)}
+    assert methods['text'][0] == 'iis' and methods['clear'][0] == '' and methods['backlight'][0] == 'b', methods
     HEAP = BASE + 0x10000; STACK = BASE + 0x1F000; cpu.x[2] = STACK
     log = []; heap = [HEAP]
     def alloc(c): p = heap[0]; heap[0] += (c.x[10] + 7) & ~7; return p
     def i2c_write(c):
         a, p, n = c.x[10], c.x[11], c.x[12]; log.append((a, bytes(c.m[p - BASE:p - BASE + n]))); return 0
-    cpu.hooks = {0xF0000000 + 4 * k: f for k, f in enumerate([lambda c: 0, alloc, lambda c: 0, lambda c: 0, lambda c: 0, lambda c: 0, i2c_write, lambda c: 0, lambda c: 0])}
     api = BASE + 0x18000
-    for k in range(9): cpu.sw(api + 4 * (k + 1), 0xF0000000 + 4 * k) if k else None
-    cpu.sw(api, 1)
-    # api: version, log, alloc, release, millis, delay_ms, delay_us, i2c_write, i2c_read, i2c_write_read
     fns = ['log', 'alloc', 'release', 'millis', 'delay_ms', 'delay_us', 'i2c_write', 'i2c_read', 'i2c_write_read']
     hk = {'log': lambda c: 0, 'alloc': alloc, 'release': lambda c: 0, 'millis': lambda c: 0, 'delay_ms': lambda c: 0,
           'delay_us': lambda c: 0, 'i2c_write': i2c_write, 'i2c_read': lambda c: 2, 'i2c_write_read': lambda c: 2}
-    cpu.hooks = {}
+    cpu.sw(api, 1)
     for k, n in enumerate(fns):
         cpu.sw(api + 4 + 4 * k, 0xF0000000 + 4 * k); cpu.hooks[0xF0000000 + 4 * k] = hk[n]
     def cstr(s, addr): b = s.encode() + b'\0'; cpu.m[addr - BASE:addr - BASE + len(b)] = b; return addr
@@ -154,7 +155,6 @@ if __name__ == '__main__':
     cpu.sw(cfg + 12, BASE + 0x16110); cpu.m[cfg - BASE + 16:cfg - BASE + 17] = bytes([2]); cpu.sw(cfg + 20, 20)
     assert cpu.run(f_open, [ctxp, api, cfg, 2]) == 0
     ctx = cpu.lw(ctxp)
-    cpu.sw(ctx, 0xdeadbeef) if False else None
     log.clear()
     args = BASE + 0x15000; cret = BASE + 0x15800; nret = BASE + 0x15F00
     def val(idx, t, **kw):
@@ -162,18 +162,16 @@ if __name__ == '__main__':
         if t == 2: cpu.sw(o + 4, kw['i'])
         if t == 3: struct.pack_into('<H', cpu.m, o + 2 - BASE, len(kw['s'])); cpu.sw(o + 4, cstr(kw['s'], BASE + 0x15200 + 64 * idx))
     val(0, 2, i=1); val(1, 2, i=3); val(2, 3, s='Hi!')
-    rc = cpu.run(f_call, [ctx, cstr('text', BASE + 0x15100), args, 3, cret, nret])
+    rc = cpu.run(methods['text'][1], [ctx, args, 3, cret, nret])
     assert rc == 0, rc
-    # 20 عمودًا: العمود 3 يترك 17 → كامل النص. كل حرف = 2 نصف بايت × 3 كتابات I2C
-    data = [b for a, d in log for b in d]
     assert all(a == 0x3F for a, d in log)
-    # فك البيانات: كل نبضة EN: [b, b|EN, b]
-    chars = []
     pulses = [d[0] for a, d in log if d[0] & 4]
     nibs = [(p >> 4, p & 1) for p in pulses]
     bytes_ = [(nibs[i][0] << 4) | nibs[i + 1][0] for i in range(0, len(nibs), 2)]
     rs = [nibs[i][1] for i in range(0, len(nibs), 2)]
-    assert bytes_[0] == 0x80 | (0x40 + 3) and rs[0] == 0, hex(bytes_[0])   # cursor row1 col3
+    assert bytes_[0] == 0x80 | (0x40 + 3) and rs[0] == 0, hex(bytes_[0])   # المؤشر: صف 1 عمود 3
     assert bytes(bytes_[1:]) == b'Hi!' and all(rs[1:]), (bytes_, rs)
-    assert cpu.run(f_call, [ctx, cstr('nope', BASE + 0x15100), args, 0, cret, nret]) & 0xffffffff == 0xffffffff
+    # حدود: صف خارج النطاق يرجع DRV_E_ARGS (-2)
+    val(0, 2, i=5)
+    assert cpu.run(methods['cursor'][1], [ctx, args, 2, cret, nret]) & 0xffffffff == 0xfffffffe
     print('تشغيل lcd1602 على RV32IM: OK —', info['name'], 'بايت الصورة', len(info['img']))

@@ -13,6 +13,7 @@ void drv_boot_load();                                            // عند ال�
 bool drv_install(const uint8_t* buf, size_t len, String* err);   // يتحقق ثم يحفظ ثم يحمّل (يستبدل النسخة القديمة إن لم تكن مستعملة)
 bool drv_remove(const char* name, String* err);                  // يفرغ من الذاكرة ويحذف الملف
 const DrvEntry* drv_find(const char* name);
+const DrvEntry* drv_at(int slot);                                // للمرور على المحمَّل (nullptr إن كان الموضع فارغًا)
 DrvEntry* drv_find_mut(const char* name);
 String drv_list_json();
 String drv_list_text();

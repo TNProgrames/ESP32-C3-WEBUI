@@ -226,5 +226,16 @@ timer.every(200, function()
   x = x + 0.15
   p:emit("sample", 50 + 40 * math.sin(x) * math.cos(x / 3))
 end)`, page: { path: '/ui/chart.html', html: CHART_PAGE } },
+  'Driver: lcd1602 (drv.open)': { code:
+`-- يتطلب درايفر lcd1602 مثبّتًا (يوضع في /drivers). SDA=GPIO8، SCL=GPIO9
+i2c.begin(8, 9, 100000)
+local lcd, err = drv.open("lcd1602", {addr = 0x27})
+if not lcd then print("LCD:", err) return end
+lcd:clear()
+timer.every(1000, function()
+  lcd:text(0, 0, "Hello ESP32-C3")
+  lcd:text(1, 0, "up " .. sys.uptime() .. "s   ")
+end)
+on_stop(function() lcd:clear() end)` },
   'Error test (حلقة لا نهائية)': { code: `-- يجب أن يوقفها الحارس بعد 200ms\nwhile true do end` }
 };

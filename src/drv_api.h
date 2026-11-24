@@ -35,15 +35,25 @@ typedef struct {
   int      (*i2c_write_read)(uint8_t addr, const uint8_t* tx, size_t txn, uint8_t* rx, size_t rxn);
 } drv_api_t;
 
-// ما يقدمه الدرايفر للفيرموير
-#define DRV_E_UNKNOWN (-1)            // دالة غير موجودة
-#define DRV_E_ARGS    (-2)            // معاملات خاطئة
+// ما يقدمه الدرايفر للفيرموير: جدول دوال + open/close
+#define DRV_E_ARGS (-2)             // معاملات خاطئة (تُرجع من الدالة)
+
+// دالة واحدة: تُرجع 0 عند النجاح، أو DRV_E_ARGS، أو رمز خطأ موجب للعتاد.
+// المعاملات تحققها الفيرموير مسبقًا حسب sig؛ والقيم المعادة تُكتب في ret (حتى 8) مع *nret.
+typedef int (*drv_fn_t)(void* ctx, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret);
+
+// sig: حرف لكل معامل — i عدد صحيح · s نص · b منطقي · d بيانات خام.
+// الحرف الكبير (I S B D) معامل اختياري، ويأتي بعد المعاملات الإلزامية.
+typedef struct { const char* name; const char* sig; drv_fn_t fn; } drv_method_t;
+
 typedef struct {
-  uint32_t version;                                                    // = DRV_API_VERSION
-  const char* name;
+  uint32_t version;                 // = DRV_API_VERSION
+  const char* name;                 // اسم الدرايفر (= اسم الملف)
+  const char* info;                 // وصف قصير
+  const drv_method_t* methods;
+  int nmethods;
   int  (*open)(void** ctx, const drv_api_t* api, const drv_kv_t* cfg, int ncfg);   // 0 = نجاح
   void (*close)(void* ctx);
-  int  (*call)(void* ctx, const char* method, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret);
 } drv_ops_t;
 
 // نقطة الدخول: الرمز drv_entry (يحدد الـ linker العنوان من e_entry)

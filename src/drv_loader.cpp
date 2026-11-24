@@ -70,6 +70,7 @@ static int slotOf(const char* name) {
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i] && !strcmp(g_drv[i].name, name)) return i;
   return -1;
 }
+const DrvEntry* drv_at(int i) { return (i >= 0 && i < DRV_MAX_LOADED && g_used[i]) ? &g_drv[i] : nullptr; }
 const DrvEntry* drv_find(const char* name) { int i = slotOf(name); return i < 0 ? nullptr : &g_drv[i]; }
 DrvEntry* drv_find_mut(const char* name) { int i = slotOf(name); return i < 0 ? nullptr : &g_drv[i]; }
 
@@ -103,9 +104,18 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
   }
   asm volatile("fence.i" ::: "memory");
   const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry))();
-  if (!ops || ops->version != DRV_API_VERSION || !ops->open || !ops->close || !ops->call) {
-    heap_caps_free(mem); if (err) *err = "bad driver ops"; return false;
+  bool good = ops && ops->version == DRV_API_VERSION && ops->open && ops->close && ops->methods && ops->nmethods > 0 && ops->nmethods <= 16;
+  for (int i = 0; good && i < ops->nmethods; i++) {
+    const drv_method_t& m = ops->methods[i];
+    good = m.name && m.sig && m.fn && strlen(m.sig) <= DRV_MAX_ARGS;
+    bool optional = false;
+    for (const char* c = m.sig; good && *c; c++) {
+      char l = (char)tolower((unsigned char)*c);
+      if (l != 'i' && l != 's' && l != 'b' && l != 'd') good = false;
+      if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;   // الإلزامي قبل الاختياري
+    }
   }
+  if (!good) { heap_caps_free(mem); if (err) *err = "bad driver ops"; return false; }
   DrvEntry& d = g_drv[slot];
   memset(&d, 0, sizeof(d));
   strncpy(d.name, p.name, 15); strncpy(d.version, p.ver, 7);
@@ -181,6 +191,11 @@ String drv_list_json() {
     JsonObject o = a.add<JsonObject>();
     o["name"] = g_drv[i].name; o["version"] = g_drv[i].version;
     o["size"] = g_drv[i].fileSize; o["mem"] = g_drv[i].memSize; o["users"] = g_drv[i].users;
+    o["info"] = g_drv[i].ops->info;
+    JsonArray ms = o["methods"].to<JsonArray>();
+    for (int k = 0; k < g_drv[i].ops->nmethods; k++) {
+      JsonObject m = ms.add<JsonObject>(); m["name"] = g_drv[i].ops->methods[k].name; m["sig"] = g_drv[i].ops->methods[k].sig;
+    }
   }
   String s; serializeJson(d, s); return s;
 }

@@ -1,5 +1,5 @@
 // lcd1602: شاشة حروف HD44780 عبر محوّل I2C (PCF8574). cfg: addr=0x27, cols=16, rows=2
-// الدوال: clear() · text(row, col, str) · backlight(bool) · cursor(row, col)
+// الدوال: clear() · text(row, col, str) · cursor(row, col) · backlight(on)
 #include "drvrt.h"
 
 #define RS 0x01
@@ -43,20 +43,34 @@ static int goto_rc(Lcd* l, int r, int c) {
   return send(l, (uint8_t)(0x80 | (base[r] + c)), 0);
 }
 
-static int do_call(void* ctx, const char* m, const drv_val_t* a, int na, drv_val_t* ret, int* nret) {
-  Lcd* l = (Lcd*)ctx; (void)ret; *nret = 0;
-  if (!strcmp(m, "clear")) { int e = send(l, 0x01, 0); l->api->delay_ms(2); return e; }
-  if (!strcmp(m, "backlight")) { l->bl = (na > 0 && a[0].type == DRV_BOOL && a[0].v.i) ? 1 : 0; return wr(l, 0); }
-  if (!strcmp(m, "cursor")) { if (!drv_is_int(a, na, 0) || !drv_is_int(a, na, 1)) return DRV_E_ARGS; return goto_rc(l, a[0].v.i, a[1].v.i); }
-  if (!strcmp(m, "text")) {
-    if (!drv_is_int(a, na, 0) || !drv_is_int(a, na, 1) || !drv_is_str(a, na, 2)) return DRV_E_ARGS;
-    int e = goto_rc(l, a[0].v.i, a[1].v.i); if (e) return e;
-    int room = l->cols - a[1].v.i;
-    for (int i = 0; i < a[2].len && i < room; i++) { e = send(l, (uint8_t)a[2].v.s[i], RS); if (e) return e; }
-    return 0;
-  }
-  return DRV_E_UNKNOWN;
+// ---- الدوال المعروضة لـ Lua (الجدول في الأسفل يصفها) ----
+static int m_clear(void* ctx, const drv_val_t* a, int na, drv_val_t* r, int* nr) {
+  (void)a; (void)na; (void)r; (void)nr;
+  Lcd* l = (Lcd*)ctx; int e = send(l, 0x01, 0); l->api->delay_ms(2); return e;
+}
+static int m_backlight(void* ctx, const drv_val_t* a, int na, drv_val_t* r, int* nr) {
+  (void)na; (void)r; (void)nr;
+  Lcd* l = (Lcd*)ctx; l->bl = a[0].v.i ? 1 : 0; return wr(l, 0);
+}
+static int m_cursor(void* ctx, const drv_val_t* a, int na, drv_val_t* r, int* nr) {
+  (void)na; (void)r; (void)nr;
+  return goto_rc((Lcd*)ctx, a[0].v.i, a[1].v.i);
+}
+static int m_text(void* ctx, const drv_val_t* a, int na, drv_val_t* r, int* nr) {
+  (void)na; (void)r; (void)nr;
+  Lcd* l = (Lcd*)ctx;
+  int e = goto_rc(l, a[0].v.i, a[1].v.i); if (e) return e;
+  int room = l->cols - a[1].v.i;
+  for (int i = 0; i < a[2].len && i < room; i++) { e = send(l, (uint8_t)a[2].v.s[i], RS); if (e) return e; }
+  return 0;
 }
 
-static const drv_ops_t OPS = { DRV_API_VERSION, NAME, do_open, do_close, do_call };
+static const drv_method_t METHODS[] = {
+  { "clear",     "",    m_clear },       // clear()
+  { "text",      "iis", m_text },        // text(row, col, str)
+  { "cursor",    "ii",  m_cursor },      // cursor(row, col)
+  { "backlight", "b",   m_backlight },   // backlight(on)
+};
+
+static const drv_ops_t OPS = { DRV_API_VERSION, NAME, "HD44780 16x2 via PCF8574 (I2C)", METHODS, 4, do_open, do_close };
 DRV_EXPORT const drv_ops_t* drv_entry(void) { return &OPS; }

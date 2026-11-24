@@ -1,4 +1,5 @@
 #include "lua_engine.h"
+#include "drv_loader.h"
 #include <LittleFS.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
@@ -48,6 +49,7 @@ struct Script {
   uint32_t  kvSaveAt;
   bool      usesI2c;
   uint8_t   requireDepth;
+  uint8_t   drvOpen;      // درايفرات مفتوحة لهذا السكريبت
 };
 
 static Script scripts[MAX_SCRIPTS];
@@ -554,6 +556,9 @@ static int l_i2c_write_read(lua_State* L);
 static int l_i2c_write_reg(lua_State* L);
 static int l_i2c_read_reg(lua_State* L);
 static void i2cRelease(Script* s);
+static int l_drv_open(lua_State* L);
+static int l_drv_list(lua_State* L);
+static void drvRegister(lua_State* L);
 
 // ---------- دورة حياة السكريبت ----------
 static void setStatus(Script* s, uint8_t st, const char* err) {
@@ -565,6 +570,8 @@ static void setStatus(Script* s, uint8_t st, const char* err) {
 
 static void releaseResources(Script* s) {
   int id = idxOf(s) + 1;
+  if (s->L) { lua_close(s->L); s->L = nullptr; }   // أولًا: تُغلق مقابض الدرايفرات (__gc) قبل تحرير ناقل I2C
+  s->drvOpen = 0;
   for (int p = 0; p < NUM_PINS; p++) if (pinOwner[p] == id) {
     for (int i = 0; i < PWM_MAX; i++) if (pwmPins[i] == p + 1) { ledcDetach(p); pwmPins[i] = 0; }
     pinMode(p, INPUT);
@@ -573,7 +580,6 @@ static void releaseResources(Script* s) {
   kvRelease(s);
   i2cRelease(s);
   uiDrop(idxOf(s));
-  if (s->L) { lua_close(s->L); s->L = nullptr; }
   s->mem = 0;
   memset(s->timers, 0, sizeof(s->timers));
   memset(s->watches, 0, sizeof(s->watches));
@@ -647,6 +653,8 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg busF[]  = { {"publish", l_bus_publish}, {"subscribe", l_bus_subscribe}, {"unsubscribe", l_bus_unsubscribe}, {NULL, NULL} };
   static const luaL_Reg i2cF[]  = { {"begin", l_i2c_begin}, {"stop", l_i2c_stop}, {"scan", l_i2c_scan}, {"write", l_i2c_write}, {"read", l_i2c_read},
                                     {"write_read", l_i2c_write_read}, {"write_reg", l_i2c_write_reg}, {"read_reg", l_i2c_read_reg}, {NULL, NULL} };
+  static const luaL_Reg drvF[] = { {"open", l_drv_open}, {"list", l_drv_list}, {NULL, NULL} };
+  reg(L, "drv", drvF); drvRegister(L);
   reg(L, "storage", stoF); reg(L, "bus", busF); reg(L, "i2c", i2cF);
   lua_pushcfunction(L, l_require); lua_setglobal(L, "require");
   reg(L, "gpio", gpioF); reg(L, "adc", adcF); reg(L, "pwm", pwmF); reg(L, "timer", timF); reg(L, "sys", sysF); reg(L, "ui", uiF);
@@ -1042,7 +1050,7 @@ static void pushBytes(lua_State* L, const uint8_t* b, size_t n) {
   for (size_t i = 0; i < n; i++) { lua_pushinteger(L, b[i]); lua_rawseti(L, -2, (lua_Integer)i + 1); }
 }
 static const char* i2cErr(int e) {
-  switch (e) { case 2: return "nack_addr"; case 3: return "nack_data"; case 5: return "timeout"; default: return "error"; }
+  switch (e) { case 2: return "nack_addr"; case 3: return "nack_data"; case 5: return "timeout"; case 7: return "i2c_not_started"; case 8: return "short_read"; default: return "error"; }
 }
 static int failResult(lua_State* L, const char* why) { lua_pushnil(L); lua_pushstring(L, why); return 2; }
 
@@ -1163,6 +1171,198 @@ static int l_i2c_read_reg(lua_State* L) {
   int r = doRead(L, addr, n);
   if (r == 1 && single) { lua_rawgeti(L, -1, 1); lua_remove(L, -2); }
   return r;
+}
+
+
+// ---------- drv: الدرايفرات الموقّعة (انظر docs/ARCHITECTURE.md) ----------
+// Lua: drv.open(name, cfg) ← d ؛ d:method(...) ؛ d:close() ؛ drv.list()
+// الفيرموير يتحقق من اسم الدالة وأنواع معاملاتها من جدول الدرايفر نفسه قبل استدعائها.
+#define DRV_HANDLES_PER_SCRIPT 2
+#define DRV_STR_MAX 4096
+#define DRV_MT "esp.drv"
+
+static Script* g_drvScript = nullptr;   // السكريبت الذي يستدعي الدرايفر الآن (المحرك مهمة واحدة)
+static int g_drvErr = 0;                // آخر خطأ من واجهة العتاد
+
+static int apiBus(int err) { g_drvErr = err; return err; }
+static bool apiBusReady() { return i2cOn && g_drvScript && g_drvScript->usesI2c; }
+static void apiLog(const char* m) { logPrintf("[drv] %s\n", m ? m : ""); }
+static void* apiAlloc(size_t n) { return n && n <= 16384 ? malloc(n) : nullptr; }
+static void apiRelease(void* p) { free(p); }
+static uint32_t apiMillis() { return millis(); }
+static void apiDelayMs(uint32_t ms) { delay(ms > 200 ? 200 : ms); }
+static void apiDelayUs(uint32_t us) { delayMicroseconds(us > 10000 ? 10000 : us); }
+static int apiI2cWrite(uint8_t addr, const uint8_t* d, size_t n) {
+  if (!apiBusReady()) return apiBus(7);
+  if (n > I2C_MAX) return apiBus(4);
+  Wire.beginTransmission(addr); Wire.write(d, n);
+  return apiBus(Wire.endTransmission(true));
+}
+static int apiRead(uint8_t addr, uint8_t* d, size_t n) {
+  if (n > I2C_MAX) return apiBus(4);
+  size_t got = Wire.requestFrom((uint16_t)addr, n, true), i = 0;
+  while (i < got && i < n && Wire.available()) d[i++] = (uint8_t)Wire.read();
+  return apiBus(i == n ? 0 : 8);
+}
+static int apiI2cRead(uint8_t addr, uint8_t* d, size_t n) { return apiBusReady() ? apiRead(addr, d, n) : apiBus(7); }
+static int apiI2cWriteRead(uint8_t addr, const uint8_t* tx, size_t txn, uint8_t* rx, size_t rxn) {
+  if (!apiBusReady()) return apiBus(7);
+  if (txn > I2C_MAX) return apiBus(4);
+  Wire.beginTransmission(addr); Wire.write(tx, txn);
+  int e = Wire.endTransmission(false);
+  return e ? apiBus(e) : apiRead(addr, rx, rxn);
+}
+static const drv_api_t DRV_API = { DRV_API_VERSION, apiLog, apiAlloc, apiRelease, apiMillis, apiDelayMs, apiDelayUs,
+                                   apiI2cWrite, apiI2cRead, apiI2cWriteRead };
+
+struct DrvHandle { DrvEntry* e; void* ctx; };
+
+static void drvClose(lua_State* L, DrvHandle* h) {
+  if (!h->e) return;
+  Script* s = me(L);
+  g_drvScript = s; g_drvErr = 0;
+  h->e->ops->close(h->ctx);
+  g_drvScript = nullptr;
+  if (h->e->users > 0) h->e->users--;
+  if (s->drvOpen > 0) s->drvOpen--;
+  h->e = nullptr; h->ctx = nullptr;
+}
+
+static int l_drv_open(lua_State* L) {
+  Script* s = me(L);
+  const char* name = luaL_checkstring(L, 1);
+  bool hasCfg = !lua_isnoneornil(L, 2);
+  if (hasCfg) luaL_checktype(L, 2, LUA_TTABLE);
+  DrvEntry* e = drv_find_mut(name);
+  if (!e) return failResult(L, "driver_not_installed");
+  if (s->drvOpen >= DRV_HANDLES_PER_SCRIPT) return luaL_error(L, "too many open drivers (max %d)", DRV_HANDLES_PER_SCRIPT);
+  drv_kv_t cfg[DRV_MAX_ARGS]; int nc = 0;
+  if (hasCfg) {
+    lua_pushnil(L);
+    while (lua_next(L, 2)) {
+      if (lua_type(L, -2) != LUA_TSTRING) luaL_error(L, "config keys must be strings");
+      if (nc >= DRV_MAX_ARGS) luaL_error(L, "config: at most %d entries", DRV_MAX_ARGS);
+      drv_kv_t& kv = cfg[nc++];
+      kv.key = lua_tostring(L, -2);
+      memset(&kv.val, 0, sizeof(kv.val));
+      int t = lua_type(L, -1);
+      if (t == LUA_TNUMBER && lua_isinteger(L, -1)) { lua_Integer v = lua_tointeger(L, -1); if (v < INT32_MIN || v > INT32_MAX) luaL_error(L, "config '%s' out of range", kv.key); kv.val.type = DRV_INT; kv.val.v.i = (int32_t)v; }
+      else if (t == LUA_TBOOLEAN) { kv.val.type = DRV_BOOL; kv.val.v.i = lua_toboolean(L, -1); }
+      else if (t == LUA_TSTRING) { size_t l; kv.val.v.s = lua_tolstring(L, -1, &l); kv.val.type = DRV_STR; kv.val.len = (uint16_t)(l > DRV_STR_MAX ? DRV_STR_MAX : l); }
+      else luaL_error(L, "config '%s': integer, boolean or string expected", kv.key);
+      lua_pop(L, 1);
+    }
+  }
+  void* ctx = nullptr; int rc;
+  {
+    IoTimer t(s);
+    g_drvScript = s; g_drvErr = 0;
+    rc = e->ops->open(&ctx, &DRV_API, cfg, nc);
+    g_drvScript = nullptr;
+  }
+  if (rc) {
+    int c = g_drvErr ? g_drvErr : rc;
+    return failResult(L, (c == 2 || c == 3 || c == 5 || c == 7 || c == 8) ? i2cErr(c) : "device_error");
+  }
+  DrvHandle* h = (DrvHandle*)lua_newuserdatauv(L, sizeof(DrvHandle), 1);
+  h->e = e; h->ctx = ctx; e->users++; s->drvOpen++;
+  luaL_setmetatable(L, DRV_MT);
+  lua_newtable(L);                    // ذاكرة مؤقتة للدوال المنشأة
+  lua_setiuservalue(L, -2, 1);
+  return 1;
+}
+
+// d:method(...) — upvalue 1 = رقم الدالة في جدول الدرايفر
+static int l_drv_call(lua_State* L) {
+  DrvHandle* h = (DrvHandle*)luaL_checkudata(L, 1, DRV_MT);
+  if (!h->e) return failResult(L, "closed");
+  Script* s = me(L);
+  const drv_method_t& m = h->e->ops->methods[lua_tointeger(L, lua_upvalueindex(1))];
+  int nargs = lua_gettop(L) - 1, total = (int)strlen(m.sig), need = 0;
+  for (const char* c = m.sig; *c; c++) if (islower((unsigned char)*c)) need++;
+  if (nargs < need || nargs > total) return failResult(L, "bad_args");
+  drv_val_t a[DRV_MAX_ARGS]; memset(a, 0, sizeof(a));
+  for (int i = 0; i < nargs; i++) {
+    int idx = i + 2, ok = 0; drv_val_t& v = a[i];
+    switch (tolower((unsigned char)m.sig[i])) {
+      case 'i': { int isn = 0; lua_Integer n = lua_tointegerx(L, idx, &isn);
+                  if (isn && lua_type(L, idx) == LUA_TNUMBER && n >= INT32_MIN && n <= INT32_MAX) { v.type = DRV_INT; v.v.i = (int32_t)n; ok = 1; } break; }
+      case 'b': if (lua_type(L, idx) == LUA_TBOOLEAN) { v.type = DRV_BOOL; v.v.i = lua_toboolean(L, idx); ok = 1; } break;
+      case 's': case 'd': if (lua_type(L, idx) == LUA_TSTRING) {
+                  size_t l; const char* p = lua_tolstring(L, idx, &l);
+                  if (l <= DRV_STR_MAX) { v.type = tolower((unsigned char)m.sig[i]) == 's' ? DRV_STR : DRV_BLOB; v.len = (uint16_t)l; v.v.s = p; ok = 1; } } break;
+    }
+    if (!ok) return failResult(L, "bad_args");
+  }
+  drv_val_t r[DRV_MAX_ARGS]; int nr = 0, rc;
+  {
+    IoTimer t(s);
+    g_drvScript = s; g_drvErr = 0;
+    rc = m.fn(h->ctx, a, nargs, r, &nr);
+    g_drvScript = nullptr;
+  }
+  if (rc == DRV_E_ARGS) return failResult(L, "bad_args");
+  if (rc) { int c = g_drvErr ? g_drvErr : rc; lua_pushnil(L); lua_pushstring(L, (c == 2 || c == 3 || c == 5 || c == 7 || c == 8) ? i2cErr(c) : "device_error"); return 2; }
+  if (nr <= 0) { lua_pushboolean(L, 1); return 1; }
+  if (nr > DRV_MAX_ARGS) nr = DRV_MAX_ARGS;
+  luaL_checkstack(L, nr, "drv results");
+  for (int i = 0; i < nr; i++) {
+    switch (r[i].type) {
+      case DRV_BOOL: lua_pushboolean(L, r[i].v.i != 0); break;
+      case DRV_INT:  lua_pushinteger(L, r[i].v.i); break;
+      case DRV_STR: case DRV_BLOB: lua_pushlstring(L, (const char*)r[i].v.p, r[i].len); break;
+      default: lua_pushnil(L);
+    }
+  }
+  return nr;
+}
+static int l_drv_unknown(lua_State* L) { return failResult(L, "unknown_method"); }
+static int l_drv_close(lua_State* L) { drvClose(L, (DrvHandle*)luaL_checkudata(L, 1, DRV_MT)); return 0; }
+
+static int l_drv_index(lua_State* L) {
+  DrvHandle* h = (DrvHandle*)luaL_checkudata(L, 1, DRV_MT);
+  const char* key = luaL_checkstring(L, 2);
+  if (!strcmp(key, "close")) { lua_pushcfunction(L, l_drv_close); return 1; }
+  if (!h->e) { lua_pushcfunction(L, l_drv_unknown); return 1; }
+  lua_getiuservalue(L, 1, 1);
+  lua_getfield(L, -1, key);
+  if (!lua_isnil(L, -1)) return 1;
+  lua_pop(L, 1);
+  const drv_ops_t* o = h->e->ops;
+  for (int i = 0; i < o->nmethods; i++) if (!strcmp(o->methods[i].name, key)) {
+    lua_pushinteger(L, i);
+    lua_pushcclosure(L, l_drv_call, 1);
+    lua_pushvalue(L, -1); lua_setfield(L, -3, key);
+    return 1;
+  }
+  lua_pushcfunction(L, l_drv_unknown);
+  return 1;
+}
+static int l_drv_gc(lua_State* L) { drvClose(L, (DrvHandle*)lua_touserdata(L, 1)); return 0; }
+static int l_drv_tostring(lua_State* L) {
+  DrvHandle* h = (DrvHandle*)lua_touserdata(L, 1);
+  lua_pushfstring(L, "drv:%s", h->e ? h->e->name : "closed"); return 1;
+}
+
+static int l_drv_list(lua_State* L) {
+  lua_newtable(L); int n = 0;
+  for (int i = 0; i < DRV_MAX_LOADED; i++) {
+    const DrvEntry* d = drv_at(i); if (!d) continue;
+    lua_newtable(L);
+    lua_pushstring(L, d->name); lua_setfield(L, -2, "name");
+    lua_pushstring(L, d->version); lua_setfield(L, -2, "version");
+    lua_pushstring(L, d->ops->info); lua_setfield(L, -2, "info");
+    lua_rawseti(L, -2, ++n);
+  }
+  return 1;
+}
+
+static void drvRegister(lua_State* L) {
+  luaL_newmetatable(L, DRV_MT);
+  lua_pushcfunction(L, l_drv_index);    lua_setfield(L, -2, "__index");
+  lua_pushcfunction(L, l_drv_gc);       lua_setfield(L, -2, "__gc");
+  lua_pushcfunction(L, l_drv_tostring); lua_setfield(L, -2, "__tostring");
+  lua_pop(L, 1);
 }
 
 
