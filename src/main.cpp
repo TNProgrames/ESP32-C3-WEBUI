@@ -9,6 +9,7 @@
 #include <esp_timer.h>
 #include <stdarg.h>
 #include "lua_engine.h"
+#include "drv_loader.h"
 #include "em.h"           // تأكد من تعريف index_html داخل هذا الملف
 #include <string.h>
 
@@ -349,8 +350,9 @@ static String runCommand(String line) {
   arg.trim();
   c.toLowerCase();
 
-  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot\nscripts | run <name> | stop <name|all> | pub <topic> <value> | data <name>";
+  if (c == "help") return "help | version | uptime | heap | wifi | ls [path] | df | echo <text> | reboot\nscripts | drivers | run <name> | stop <name|all> | pub <topic> <value> | data <name>";
   if (c == "scripts") return luaeng_list_text();
+  if (c == "drivers") return drv_list_text();
   if (c == "pub") {
     int sp2 = arg.indexOf(' ');
     if (sp2 < 0) return "usage: pub <topic> <value>";
@@ -1001,6 +1003,7 @@ void setup() {
   loadsetting();
   EmSetupAPI();
   setupServerWeb();
+  drv_boot_load();
   luaeng_begin();
   server.begin();
 }

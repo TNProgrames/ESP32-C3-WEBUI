@@ -1,0 +1,54 @@
+// واجهة الدرايفرات الموقّعة (.drv): تُضمَّن في الفيرموير وفي كل درايفر.
+// قواعد الدرايفر: C فقط، بلا float ولا مكتبات (freestanding)، وكل شيء عبر جدول drv_api_t.
+#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define DRV_API_VERSION 1
+#define DRV_MAX_ARGS 8
+
+enum { DRV_NIL = 0, DRV_BOOL = 1, DRV_INT = 2, DRV_STR = 3, DRV_BLOB = 4 };
+
+typedef struct {
+  uint8_t  type;
+  uint8_t  _pad;
+  uint16_t len;                       // لـ STR/BLOB
+  union { int32_t i; const uint8_t* p; const char* s; } v;
+} drv_val_t;                          // 8 بايت على RV32
+
+typedef struct { const char* key; drv_val_t val; } drv_kv_t;
+
+// ما يقدمه الفيرموير للدرايفر (الكود يستدعي عبر المؤشرات فقط)
+typedef struct {
+  uint32_t version;                                                    // = DRV_API_VERSION
+  void     (*log)(const char* msg);
+  void*    (*alloc)(size_t n);
+  void     (*release)(void* p);
+  uint32_t (*millis)(void);
+  void     (*delay_ms)(uint32_t ms);
+  void     (*delay_us)(uint32_t us);
+  int      (*i2c_write)(uint8_t addr, const uint8_t* d, size_t n);     // 0 = نجاح
+  int      (*i2c_read)(uint8_t addr, uint8_t* d, size_t n);
+  int      (*i2c_write_read)(uint8_t addr, const uint8_t* tx, size_t txn, uint8_t* rx, size_t rxn);
+} drv_api_t;
+
+// ما يقدمه الدرايفر للفيرموير
+#define DRV_E_UNKNOWN (-1)            // دالة غير موجودة
+#define DRV_E_ARGS    (-2)            // معاملات خاطئة
+typedef struct {
+  uint32_t version;                                                    // = DRV_API_VERSION
+  const char* name;
+  int  (*open)(void** ctx, const drv_api_t* api, const drv_kv_t* cfg, int ncfg);   // 0 = نجاح
+  void (*close)(void* ctx);
+  int  (*call)(void* ctx, const char* method, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret);
+} drv_ops_t;
+
+// نقطة الدخول: الرمز drv_entry (يحدد الـ linker العنوان من e_entry)
+typedef const drv_ops_t* (*drv_entry_t)(void);
+
+#ifdef __cplusplus
+}
+#endif
