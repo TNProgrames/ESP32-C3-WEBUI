@@ -44,7 +44,7 @@
 
 ## واجهة الدرايفر (`src/drv_api.h`)
 
-- الفيرموير يعطي الدرايفر جدول `drv_api_t`: `log` `alloc` `release` `millis` `delay_ms` `delay_us` `i2c_write` `i2c_read` `i2c_write_read` (كلها تُرجع 0 عند النجاح).
+- الفيرموير يعطي الدرايفر جدول `drv_api_t`: `log` `alloc` `release` `millis` `delay_ms` `delay_us` `i2c_write` `i2c_read` `i2c_write_read` و`spi_write` `spi_transfer` `gpio_mode` `gpio_write` `gpio_read` (API v2؛ كلها تُرجع 0 عند النجاح).
 - الدرايفر يعيد `drv_ops_t`: الاسم ووصف قصير و**جدول الدوال** و`open(ctx, api, cfg, ncfg)` و`close(ctx)`.
 - كل دالة سطر في الجدول: `{ "text", "iis", m_text }` — الاسم، وسلسلة الأنواع، والدالة. الأحرف: `i` عدد صحيح · `s` نص · `b` منطقي · `d` بيانات خام. **الحرف الكبير اختياري** ويأتي بعد الإلزامي.
 - الفيرموير يتحقق من الاسم وعدد المعاملات وأنواعها قبل الاستدعاء، فلا يحتاج الدرايفر لفحص الأنواع. أما حدود القيم (صف خارج الشاشة مثلًا) فيفحصها الدرايفر ويعيد `DRV_E_ARGS`.
@@ -104,8 +104,24 @@ lcd:close()                                               -- اختياري: ي�
 
 ## الدرايفرات الجاهزة
 
-| الاسم | الوصف | الحالة |
+| الاسم | الدوال | الناقل |
 |---|---|---|
+| `lcd1602` | `clear()` `text(r,c,s)` `cursor(r,c)` `backlight(b)` | I2C (0x27) |
+| `ssd1306` | `clear` `show` `pixel(x,y,on)` `line` `rect` `circle` `bar` `text(x,y,s)` `invert` `contrast` (128×64/32، SH1106 اختياري) | I2C |
+| `bme280` | `read()` ← `temp_x100, press_pa, hum_x100` · `chip_id()` · `info()` | I2C |
+| `st7789` | `clear(c)` `pixel` `rect` `text(x,y,s,fg,bg)` `backlight` `invert` | SPI (`spi.begin` أولًا) |
+
+كلها تُختبر في CI داخل محاكي RV32IM (`tools/drv/test_drivers.py`) — لم تُجرَّب على العتاد بعد.
+
+## واجهة API v2
+أضافت `spi_write` `spi_transfer` `gpio_mode` `gpio_write` `gpio_read` (الدرايفر لا يلمس إلا الأرجل التي يملكها السكريبت). أخطاء جديدة: `"pin_unavailable"` `"spi_not_started"`. ناقل SPI من Lua: `spi.begin(sck,mosi,miso)` / `spi.stop()`.
+
+## الفهرس والمتجر
+- CI يبني ويوقّع الدرايفرات (`tools/drv/build_index.py`) فينتج `drivers/build/*.drv` و`index.json` (الاسم، النسخة، api، الحجم، sha256، الدوال).
+- `ui/src/drvstore.js` يجلب الفهرس من `raw.githubusercontent.com/TNProgrames/ESP32-C3-WEBUI/main/drivers/build/index.json` ويتحقق من sha256 ثم يرفع الملف إلى `/drv/install`.
+- ⚠️ يتطلب مستودعًا **عامًا** واتصال إنترنت على الهاتف؛ يمكن تغيير العنوان من التبويب.
+
+---|---|---|
 | `lcd1602` | شاشة حروف HD44780 عبر PCF8574 (`clear` `text` `cursor` `backlight`)، الافتراضي 0x27 | ✅ مبني (لم يُجرَّب على العتاد) |
 | `ssd1306` | OLED I2C (128×64 و128×32 وSH1106) | 🕒 المرحلة 5 |
 | `bme280` | حرارة/ضغط/رطوبة (BMP280 بلا رطوبة) | 🕒 المرحلة 5 |

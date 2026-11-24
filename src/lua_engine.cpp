@@ -2,6 +2,7 @@
 #include "drv_loader.h"
 #include <LittleFS.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -26,6 +27,7 @@ extern "C" {
 #define PWM_MAX       6
 #define NUM_PINS      22
 #define PIN_I2C       255   // مالك خاص: أرجل ناقل I2C المشترك
+#define PIN_SPI       254   // مالك خاص: أرجل ناقل SPI المشترك
 
 enum { ST_FREE = 0, ST_RUN = 1, ST_ERR = 2 };
 
@@ -48,6 +50,7 @@ struct Script {
   bool      kvDirty;
   uint32_t  kvSaveAt;
   bool      usesI2c;
+  bool      usesSpi;
   uint8_t   requireDepth;
   uint8_t   drvOpen;      // درايفرات مفتوحة لهذا السكريبت
 };
@@ -90,6 +93,7 @@ static int claimPin(lua_State* L, int p) {
   if (!pinAllowed(p)) return luaL_error(L, "pin %d not allowed", p);
   int o = pinOwner[p];
   if (o == PIN_I2C) return luaL_error(L, "pin %d is used by the I2C bus", p);
+  if (o == PIN_SPI) return luaL_error(L, "pin %d is used by the SPI bus", p);
   if (o && o != idxOf(s) + 1) return luaL_error(L, "pin %d owned by %s", p, scripts[o - 1].name);
   pinOwner[p] = idxOf(s) + 1;
   return 0;
@@ -556,6 +560,9 @@ static int l_i2c_write_read(lua_State* L);
 static int l_i2c_write_reg(lua_State* L);
 static int l_i2c_read_reg(lua_State* L);
 static void i2cRelease(Script* s);
+static void spiRelease(Script* s);
+static int l_spi_begin(lua_State* L);
+static int l_spi_stop(lua_State* L);
 static int l_drv_open(lua_State* L);
 static int l_drv_list(lua_State* L);
 static void drvRegister(lua_State* L);
@@ -578,6 +585,7 @@ static void releaseResources(Script* s) {
     pinOwner[p] = 0;
   }
   kvRelease(s);
+  spiRelease(s);
   i2cRelease(s);
   uiDrop(idxOf(s));
   s->mem = 0;
@@ -654,6 +662,8 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg i2cF[]  = { {"begin", l_i2c_begin}, {"stop", l_i2c_stop}, {"scan", l_i2c_scan}, {"write", l_i2c_write}, {"read", l_i2c_read},
                                     {"write_read", l_i2c_write_read}, {"write_reg", l_i2c_write_reg}, {"read_reg", l_i2c_read_reg}, {NULL, NULL} };
   static const luaL_Reg drvF[] = { {"open", l_drv_open}, {"list", l_drv_list}, {NULL, NULL} };
+  static const luaL_Reg spiF[] = { {"begin", l_spi_begin}, {"stop", l_spi_stop}, {NULL, NULL} };
+  reg(L, "spi", spiF);
   reg(L, "drv", drvF); drvRegister(L);
   reg(L, "storage", stoF); reg(L, "bus", busF); reg(L, "i2c", i2cF);
   lua_pushcfunction(L, l_require); lua_setglobal(L, "require");
@@ -1174,6 +1184,47 @@ static int l_i2c_read_reg(lua_State* L) {
 }
 
 
+// ---------- SPI (ناقل مشترك؛ يفتحه السكريبت والنقل تتولاه الدرايفرات) ----------
+static bool spiOn = false;
+static int spiSck = -1, spiMosi = -1, spiMiso = -1;
+
+static void spiRelease(Script* s) {
+  if (!s->usesSpi) return;
+  s->usesSpi = false;
+  for (auto& x : scripts) if (x.usesSpi) return;      // ما زال هناك مستعمل آخر
+  if (spiOn) {
+    SPI.end();
+    if (spiSck >= 0)  { pinOwner[spiSck] = 0;  pinMode(spiSck, INPUT); }
+    if (spiMosi >= 0) { pinOwner[spiMosi] = 0; pinMode(spiMosi, INPUT); }
+    if (spiMiso >= 0) { pinOwner[spiMiso] = 0; pinMode(spiMiso, INPUT); }
+    spiOn = false; spiSck = spiMosi = spiMiso = -1;
+  }
+}
+// spi.begin(sck, mosi [, miso])
+static int l_spi_begin(lua_State* L) {
+  Script* s = me(L);
+  int sck = (int)luaL_checkinteger(L, 1), mosi = (int)luaL_checkinteger(L, 2);
+  int miso = lua_isnoneornil(L, 3) ? -1 : (int)luaL_checkinteger(L, 3);
+  if (spiOn) {
+    if (sck != spiSck || mosi != spiMosi || miso != spiMiso) return luaL_error(L, "SPI already on pins %d,%d,%d", spiSck, spiMosi, spiMiso);
+    s->usesSpi = true; return 0;
+  }
+  int pins[3] = { sck, mosi, miso };
+  for (int i = 0; i < 3; i++) {
+    if (pins[i] < 0) { if (i == 2) continue; return luaL_error(L, "pin required"); }
+    if (!pinAllowed(pins[i])) return luaL_error(L, "pin not allowed");
+    for (int j = 0; j < i; j++) if (pins[j] == pins[i]) return luaL_error(L, "SPI pins must differ");
+  }
+  int mine = idxOf(s) + 1;
+  for (int i = 0; i < 3; i++) if (pins[i] >= 0 && pinOwner[pins[i]] && pinOwner[pins[i]] != mine) return luaL_error(L, "SPI pin already owned");
+  SPI.begin(sck, miso, mosi, -1);
+  for (int i = 0; i < 3; i++) if (pins[i] >= 0) pinOwner[pins[i]] = PIN_SPI;
+  spiOn = true; spiSck = sck; spiMosi = mosi; spiMiso = miso;
+  s->usesSpi = true;
+  return 0;
+}
+static int l_spi_stop(lua_State* L) { spiRelease(me(L)); return 0; }
+
 // ---------- drv: الدرايفرات الموقّعة (انظر docs/ARCHITECTURE.md) ----------
 // Lua: drv.open(name, cfg) ← d ؛ d:method(...) ؛ d:close() ؛ drv.list()
 // الفيرموير يتحقق من اسم الدالة وأنواع معاملاتها من جدول الدرايفر نفسه قبل استدعائها.
@@ -1212,8 +1263,56 @@ static int apiI2cWriteRead(uint8_t addr, const uint8_t* tx, size_t txn, uint8_t*
   int e = Wire.endTransmission(false);
   return e ? apiBus(e) : apiRead(addr, rx, rxn);
 }
+
+static bool apiOwnPin(int pin) {            // يحجز الدبوس لسكريبت المستدعي (يُحرَّر مع السكريبت)
+  if (!g_drvScript || pin < 0 || !pinAllowed(pin)) return false;
+  int o = pinOwner[pin], mine = idxOf(g_drvScript) + 1;
+  if (o == PIN_I2C || o == PIN_SPI || (o && o != mine)) return false;
+  pinOwner[pin] = (uint8_t)mine;
+  return true;
+}
+static int apiSpiReady(uint8_t cs, uint32_t freq, uint8_t mode, size_t n) {
+  if (!spiOn || !g_drvScript || !g_drvScript->usesSpi) return apiBus(10);
+  if (freq < 10000 || freq > 40000000 || mode > 3 || n > 4096) return apiBus(4);
+  if (!apiOwnPin(cs)) return apiBus(9);
+  return 0;
+}
+static int apiSpiWrite(uint8_t cs, uint32_t freq, uint8_t mode, const uint8_t* d, size_t n) {
+  int e = apiSpiReady(cs, freq, mode, n); if (e) return e;
+  pinMode(cs, OUTPUT);
+  SPI.beginTransaction(SPISettings(freq, MSBFIRST, mode));
+  digitalWrite(cs, LOW); SPI.writeBytes(d, (uint32_t)n); digitalWrite(cs, HIGH);
+  SPI.endTransaction();
+  return apiBus(0);
+}
+static int apiSpiTransfer(uint8_t cs, uint32_t freq, uint8_t mode, const uint8_t* tx, uint8_t* rx, size_t n) {
+  int e = apiSpiReady(cs, freq, mode, n); if (e) return e;
+  pinMode(cs, OUTPUT);
+  SPI.beginTransaction(SPISettings(freq, MSBFIRST, mode));
+  digitalWrite(cs, LOW); SPI.transferBytes(tx, rx, (uint32_t)n); digitalWrite(cs, HIGH);
+  SPI.endTransaction();
+  return apiBus(0);
+}
+static int apiGpioMode(uint8_t pin, uint8_t mode) {
+  if (!apiOwnPin(pin)) return apiBus(9);
+  pinMode(pin, mode == 1 ? OUTPUT : (mode == 2 ? INPUT_PULLUP : INPUT));
+  return apiBus(0);
+}
+static int apiGpioWrite(uint8_t pin, uint8_t val) {
+  if (!apiOwnPin(pin)) return apiBus(9);
+  digitalWrite(pin, val ? HIGH : LOW);
+  return apiBus(0);
+}
+static int apiGpioRead(uint8_t pin) {
+  if (!g_drvScript || pin >= NUM_PINS || pinOwner[pin] != idxOf(g_drvScript) + 1) return -1;
+  return digitalRead(pin);
+}
+static const char* drvErrName(int c) {
+  switch (c) { case 2: case 3: case 5: case 7: case 8: return i2cErr(c); case 9: return "pin_unavailable"; case 10: return "spi_not_started"; default: return "device_error"; }
+}
 static const drv_api_t DRV_API = { DRV_API_VERSION, apiLog, apiAlloc, apiRelease, apiMillis, apiDelayMs, apiDelayUs,
-                                   apiI2cWrite, apiI2cRead, apiI2cWriteRead };
+                                   apiI2cWrite, apiI2cRead, apiI2cWriteRead,
+                                   apiSpiWrite, apiSpiTransfer, apiGpioMode, apiGpioWrite, apiGpioRead };
 
 struct DrvHandle { DrvEntry* e; void* ctx; };
 
@@ -1263,7 +1362,7 @@ static int l_drv_open(lua_State* L) {
   if (rc) {
     drv_release(e);
     int c = g_drvErr ? g_drvErr : rc;
-    return failResult(L, (c == 2 || c == 3 || c == 5 || c == 7 || c == 8) ? i2cErr(c) : "device_error");
+    return failResult(L, drvErrName(c));
   }
   DrvHandle* h = (DrvHandle*)lua_newuserdatauv(L, sizeof(DrvHandle), 1);
   h->e = e; h->ctx = ctx; s->drvOpen++;
@@ -1303,7 +1402,7 @@ static int l_drv_call(lua_State* L) {
     g_drvScript = nullptr;
   }
   if (rc == DRV_E_ARGS) return failResult(L, "bad_args");
-  if (rc) { int c = g_drvErr ? g_drvErr : rc; lua_pushnil(L); lua_pushstring(L, (c == 2 || c == 3 || c == 5 || c == 7 || c == 8) ? i2cErr(c) : "device_error"); return 2; }
+  if (rc) { int c = g_drvErr ? g_drvErr : rc; lua_pushnil(L); lua_pushstring(L, drvErrName(c)); return 2; }
   if (nr <= 0) { lua_pushboolean(L, 1); return 1; }
   if (nr > DRV_MAX_ARGS) nr = DRV_MAX_ARGS;
   luaL_checkstack(L, nr, "drv results");

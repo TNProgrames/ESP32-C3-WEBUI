@@ -5,13 +5,15 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from cryptography.hazmat.primitives import hashes, serialization
 
-KEY = __import__('os').path.join(__import__('os').path.dirname(__file__), 'drv_key.pem')
+import os, re
+KEY = os.path.join(os.path.dirname(__file__), 'drv_key.pem')
+API_VERSION = int(re.search(r'#define DRV_API_VERSION (\d+)', open(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'drv_api.h')).read()).group(1))
 
 def verify(blob):
     """نفس منطق drv_loader.cpp"""
     if len(blob) < 64 + 64 or blob[:4] != b'ESPD': raise ValueError('magic')
     fmt, api, entry, img_len, mem_len, nrel = struct.unpack_from('<HHIIII', blob, 4)
-    if fmt != 1 or api != 1: raise ValueError('version')
+    if fmt != 1 or api != API_VERSION: raise ValueError('version')
     if mem_len < img_len or entry >= img_len or entry % 2: raise ValueError('layout')
     if 64 + img_len + 4 * nrel + 64 != len(blob): raise ValueError('size')
     k = serialization.load_pem_private_key(open(KEY, 'rb').read(), None).public_key()
@@ -130,7 +132,7 @@ if __name__ == '__main__':
     cpu, info = load(blob)
     ops = cpu.run(BASE + info['entry'], [])
     ver, nameptr, infoptr, mptr, nmeth, f_open, f_close = [cpu.lw(ops + 4 * i) for i in range(7)]
-    assert ver == 1 and nmeth == 4
+    assert ver == API_VERSION and nmeth == 4
     def cs(addr):
         e = addr - BASE
         return cpu.m[e:cpu.m.index(0, e)].decode()
@@ -145,7 +147,7 @@ if __name__ == '__main__':
     fns = ['log', 'alloc', 'release', 'millis', 'delay_ms', 'delay_us', 'i2c_write', 'i2c_read', 'i2c_write_read']
     hk = {'log': lambda c: 0, 'alloc': alloc, 'release': lambda c: 0, 'millis': lambda c: 0, 'delay_ms': lambda c: 0,
           'delay_us': lambda c: 0, 'i2c_write': i2c_write, 'i2c_read': lambda c: 2, 'i2c_write_read': lambda c: 2}
-    cpu.sw(api, 1)
+    cpu.sw(api, API_VERSION)
     for k, n in enumerate(fns):
         cpu.sw(api + 4 + 4 * k, 0xF0000000 + 4 * k); cpu.hooks[0xF0000000 + 4 * k] = hk[n]
     def cstr(s, addr): b = s.encode() + b'\0'; cpu.m[addr - BASE:addr - BASE + len(b)] = b; return addr

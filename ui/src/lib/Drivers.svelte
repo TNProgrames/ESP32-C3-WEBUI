@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { api, authHeaders } from '../api.js';
+  import { DEFAULT_INDEX, fetchIndex, compare, installToDevice, removeFromDevice, installFromStore } from '../drvstore.js';
   import { t } from '../store.svelte.js';
   import { lab } from '../lab.svelte.js';
 
@@ -11,7 +12,7 @@
   let msg = $state('');
   let busy = $state(false);
   let file = $state(null);
-  let storeUrl = $state(localStorage.getItem(STORE_KEY) || 'https://raw.githubusercontent.com/TNProgrames/ESP32-C3-WEBUI/main/drivers/index.json');
+  let storeUrl = $state(localStorage.getItem(STORE_KEY) || DEFAULT_INDEX);
   let store = $state([]);           // الفهرس المجلوب
   let storeMsg = $state('');
 
@@ -50,50 +51,38 @@
   });
   $effect(() => { method; untrack(() => { args = []; }); });
 
-  // ---- التثبيت والحذف ----
-  async function post(path, body) {
-    const r = await fetch(path, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' }, body });
-    let j = null; try { j = await r.json(); } catch {}
-    if (r.status === 401) { location.reload(); return null; }
-    return { ok: r.ok && j?.ok, error: j?.error || ('HTTP ' + r.status) };
-  }
+  // ---- التثبيت والحذف (المنطق في drvstore.js) ----
   async function install(buf) {
     busy = true; msg = '';
-    const r = await post('/drv/install', buf);
-    msg = r?.ok ? t('تم التثبيت') : t('تعذر التثبيت') + ': ' + (r?.error || '');
+    const r = await installToDevice(buf);
+    msg = r.ok ? t('تم التثبيت') : t('تعذر التثبيت') + ': ' + r.error;
     busy = false; refresh();
-    return r?.ok;
+    return r.ok;
   }
-  async function upload() { if (file) { await install(await file.arrayBuffer()); } }
+  async function upload() { if (file) await install(await file.arrayBuffer()); }
   async function remove(n) {
     if (!confirm(t('حذف الدرايفر') + ' ' + n + '؟')) return;
-    const r = await post('/drv/remove?name=' + encodeURIComponent(n), '');
-    msg = r?.ok ? t('تم الحذف') : t('تعذر الحذف') + ': ' + (r?.error || '');
+    const r = await removeFromDevice(n);
+    msg = r.ok ? t('تم الحذف') : t('تعذر الحذف') + ': ' + r.error;
     refresh();
   }
 
-  // ---- المتجر (يجلبه المتصفح لا الجهاز) ----
+  // ---- المتجر: يجلبه المتصفح لا الجهاز ----
   async function loadStore() {
     storeMsg = ''; store = [];
     try {
       localStorage.setItem(STORE_KEY, storeUrl);
-      const r = await fetch(storeUrl, { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      store = await r.json();
+      store = await fetchIndex(storeUrl);
       if (!store.length) storeMsg = t('الفهرس فارغ');
     } catch (e) { storeMsg = t('تعذر جلب الفهرس (يلزم اتصال بالإنترنت)') + ': ' + (e.message || ''); }
-  }
-  function storeState(d) {
-    const i = list.find((x) => x.name === d.name);
-    return !i ? 'new' : (i.version === d.version ? 'same' : 'upd');
   }
   async function fromStore(d) {
     busy = true; msg = '';
     try {
-      const r = await fetch(new URL(d.file, storeUrl).href);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      await install(await r.arrayBuffer());
-    } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); busy = false; }
+      const r = await installFromStore(d, storeUrl);
+      msg = r.ok ? t('تم التثبيت') : t('تعذر التثبيت') + ': ' + r.error;
+    } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
+    busy = false; refresh();
   }
 
   // ---- توليد Lua للاختبار ----
@@ -181,11 +170,14 @@
   </div>
   {#if storeMsg}<div style="margin-top:6px;font-size:12px;color:var(--muted)">{storeMsg}</div>{/if}
   {#each store as d (d.name)}
-    <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:13px"><b>{d.name}</b> <span style="color:var(--muted)">v{d.version} · {d.size}B</span></span>
-      <button class="btn ghost" disabled={busy || storeState(d) === 'same'} onclick={() => fromStore(d)}>
-        {storeState(d) === 'same' ? t('مثبّت') : storeState(d) === 'upd' ? t('تحديث') : t('تثبيت')}
-      </button>
+    <div style="padding:6px 0;border-bottom:1px solid var(--border)">
+      <div class="row" style="justify-content:space-between">
+        <span style="font-size:13px"><b>{d.name}</b> <span style="color:var(--muted)">v{d.version} · {d.size}B · RAM {d.mem}B · API {d.api}</span></span>
+        <button class="btn ghost" disabled={busy || compare(d, list) === 'same'} onclick={() => fromStore(d)}>
+          {compare(d, list) === 'same' ? t('مثبّت') : compare(d, list) === 'upd' ? t('تحديث') : t('تثبيت')}
+        </button>
+      </div>
+      <div style="color:var(--muted);font-size:12px">{d.info}</div>
     </div>
   {/each}
 </div>

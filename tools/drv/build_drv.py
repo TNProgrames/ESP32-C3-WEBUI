@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 KEY = os.path.join(HERE, 'drv_key.pem')
-API_VERSION = 1
+API_VERSION = int(__import__('re').search(r'#define DRV_API_VERSION (\d+)', open(os.path.join(ROOT, 'src', 'drv_api.h')).read()).group(1))   # يطابق الفيرموير
 MAX_FILE = 24 * 1024
 CFLAGS = ['--target=riscv32', '-march=rv32im', '-mabi=ilp32', '-Os', '-fPIC', '-ffreestanding', '-fno-builtin',
           '-fvisibility=hidden', '-mno-relax', '-fno-stack-protector', '-fno-unwind-tables',

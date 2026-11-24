@@ -38,8 +38,24 @@ jobs:
           npm install
           npm run build
 
-      - name: Install PlatformIO
-        run: pip install platformio
+      - name: Install driver build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+          pip install platformio cryptography
+
+      # الدرايفرات المُودَعة في drivers/build (التي يجلبها متجر الواجهة) يجب أن تكون صالحة للتوقيع الحالي ونسخة الواجهة
+      - name: Verify committed drivers and store logic
+        run: |
+          python3 tools/drv/test_drivers.py drivers/build
+          node tools/drv/test_store.mjs
+
+      - name: Build, sign and test drivers from source
+        run: |
+          DRV_VER="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || DRV_VER="1.0"
+          python3 tools/drv/build_index.py --version "$DRV_VER" --out-dir dist-drivers
+          python3 tools/drv/test_drivers.py dist-drivers
 
       # نفس FW_VERSION لكل خطوات pio، وإلا يعتبره PlatformIO تغيّراً في الإعدادات ويمسح مجلد البناء
       - name: Set firmware version
@@ -64,6 +80,7 @@ jobs:
           cp $B/bootloader.bin dist/bootloader-$VER.bin
           cp $B/partitions.bin dist/partitions-$VER.bin
           [ -f $B/littlefs.bin ] && cp $B/littlefs.bin dist/littlefs-$VER.bin || true
+          cp dist-drivers/*.drv dist/ && cp dist-drivers/index.json dist/
           ls -l dist
 
       - uses: actions/upload-artifact@v4

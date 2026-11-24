@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "drivers": [
+    {
+      "name": "bme280",
+      "version": "1.0",
+      "api": 2,
+      "size": 3672,
+      "mem": 3488,
+      "sha256": "64574577203d23e72da6e6f95d451ae6890be8e732d0894bdb6416699b770190",
+      "file": "bme280.drv",
+      "info": "BME280/BMP280 temp/press/hum (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "chip_id",
+          "sig": ""
+        },
+        {
+          "name": "info",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "name": "lcd1602",
+      "version": "1.0",
+      "api": 2,
+      "size": 2576,
+      "mem": 2380,
+      "sha256": "0efc5c9d128196c2bae0aac86db0473fe536a38bae7f9472b656ba9d6c8444c4",
+      "file": "lcd1602.drv",
+      "info": "HD44780 16x2 via PCF8574 (I2C)",
+      "methods": [
+        {
+          "name": "clear",
+          "sig": ""
+        },
+        {
+          "name": "text",
+          "sig": "iis"
+        },
+        {
+          "name": "cursor",
+          "sig": "ii"
+        },
+        {
+          "name": "backlight",
+          "sig": "b"
+        }
+      ]
+    },
+    {
+      "name": "ssd1306",
+      "version": "1.0",
+      "api": 2,
+      "size": 6268,
+      "mem": 6000,
+      "sha256": "9d866171e11cb23e0567e3c39f0fba158537a8d6ece0d6a3d7b3f97c8e5ab0be",
+      "file": "ssd1306.drv",
+      "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
+      "methods": [
+        {
+          "name": "clear",
+          "sig": ""
+        },
+        {
+          "name": "show",
+          "sig": ""
+        },
+        {
+          "name": "pixel",
+          "sig": "iiB"
+        },
+        {
+          "name": "line",
+          "sig": "iiiiB"
+        },
+        {
+          "name": "rect",
+          "sig": "iiiiBB"
+        },
+        {
+          "name": "circle",
+          "sig": "iiiBB"
+        },
+        {
+          "name": "bar",
+          "sig": "iiiii"
+        },
+        {
+          "name": "text",
+          "sig": "iis"
+        },
+        {
+          "name": "invert",
+          "sig": "b"
+        },
+        {
+          "name": "contrast",
+          "sig": "i"
+        }
+      ]
+    },
+    {
+      "name": "st7789",
+      "version": "1.0",
+      "api": 2,
+      "size": 5084,
+      "mem": 4864,
+      "sha256": "84818d1340e99b47dd4909fce3cdf981f2a6163313226651442eec366fef5d4e",
+      "file": "st7789.drv",
+      "info": "ST7789 color TFT strip renderer (SPI)",
+      "methods": [
+        {
+          "name": "clear",
+          "sig": "I"
+        },
+        {
+          "name": "pixel",
+          "sig": "iii"
+        },
+        {
+          "name": "rect",
+          "sig": "iiiii"
+        },
+        {
+          "name": "text",
+          "sig": "iisII"
+        },
+        {
+          "name": "backlight",
+          "sig": "b"
+        },
+        {
+          "name": "invert",
+          "sig": "b"
+        }
+      ]
+    }
+  ]
+}

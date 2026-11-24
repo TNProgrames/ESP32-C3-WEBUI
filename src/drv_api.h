@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define DRV_API_VERSION 1
+#define DRV_API_VERSION 2
 #define DRV_MAX_ARGS 8
 
 enum { DRV_NIL = 0, DRV_BOOL = 1, DRV_INT = 2, DRV_STR = 3, DRV_BLOB = 4 };
@@ -33,6 +33,13 @@ typedef struct {
   int      (*i2c_write)(uint8_t addr, const uint8_t* d, size_t n);     // 0 = نجاح
   int      (*i2c_read)(uint8_t addr, uint8_t* d, size_t n);
   int      (*i2c_write_read)(uint8_t addr, const uint8_t* tx, size_t txn, uint8_t* rx, size_t rxn);
+  // SPI: الناقل يفتحه السكريبت بـ spi.begin؛ الدرايفر يحدد CS والتردد والنمط لكل نقل. 0 = نجاح
+  int      (*spi_write)(uint8_t cs, uint32_t freq_hz, uint8_t mode, const uint8_t* d, size_t n);
+  int      (*spi_transfer)(uint8_t cs, uint32_t freq_hz, uint8_t mode, const uint8_t* tx, uint8_t* rx, size_t n);
+  // GPIO: يحجز الدبوس لسكريبت المستدعي (يُحرَّر معه). 0 = نجاح، وإلا الدبوس غير مسموح أو مملوك لغيره
+  int      (*gpio_mode)(uint8_t pin, uint8_t mode);                    // 0=in, 1=out, 2=in_pullup
+  int      (*gpio_write)(uint8_t pin, uint8_t val);
+  int      (*gpio_read)(uint8_t pin);                                  // 0/1، أو -1 إن لم يكن الدبوس محجوزًا
 } drv_api_t;
 
 // ما يقدمه الدرايفر للفيرموير: جدول دوال + open/close
