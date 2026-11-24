@@ -8,6 +8,7 @@
 #include <mbedtls/bignum.h>
 #include <ArduinoJson.h>
 #include <string.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -95,6 +96,17 @@ int drv_snapshot(DrvBrief* out, int max) {
 }
 
 
+// مسار تشخيص بلا منفذ تسلسلي: آخر مرحلة وصل إليها التحميل تُحفظ في RTC وتبقى بعد انهيار الجهاز
+static RTC_NOINIT_ATTR uint32_t g_stageMagic;
+static RTC_NOINIT_ATTR uint32_t g_stage;
+static RTC_NOINIT_ATTR uint32_t g_stageAddr;
+static String g_prevReport;
+static void stage(uint32_t n, uint32_t addr = 0) { g_stageMagic = 0xD15C0DE5; g_stage = n; g_stageAddr = addr; }
+static const char* stageName(uint32_t n) {
+  switch (n) { case 1: return "verified"; case 2: return "pool-alloc"; case 3: return "copy-image"; case 4: return "relocate";
+               case 5: return "before-entry-call"; case 6: return "after-entry-call"; case 7: return "ops-validated"; default: return "none"; }
+}
+
 // ESP32-C3 + Arduino: لا كومة قابلة للتنفيذ (free=0). نحجز مجمّعًا ثابتًا في IRAM (قابل للتنفيذ والكتابة بنفس العنوان)
 // ونقسمه إلى كتل 1KB. الكلفة: DRV_POOL_KB من الذاكرة الداخلية دائمًا.
 #define DRV_POOL_KB 20
@@ -137,20 +149,29 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
+  stage(1);
   size_t sz = (p.memLen + 15) & ~15u;
   uint8_t* mem = execAlloc(sz);
   if (!mem) { if (err) *err = "no executable memory"; return false; }
-  memcpy(mem, b + HDR, p.imgLen);
-  if (p.memLen > p.imgLen) memset(mem + p.imgLen, 0, p.memLen - p.imgLen);
+  stage(2, (uint32_t)(uintptr_t)mem);
+  // الكتابة عبر ناقل البيانات إن وقع المجمّع في نافذة IRAM (أضمن من الكتابة عبر ناقل التعليمات)
+  uint32_t ia = (uint32_t)(uintptr_t)mem;
+  uint8_t* wr = (ia >= 0x40380000u && ia < 0x403E0000u) ? (uint8_t*)(uintptr_t)(ia - 0x700000u) : mem;
+  stage(3, (uint32_t)(uintptr_t)wr);
+  memcpy(wr, b + HDR, p.imgLen);
+  if (p.memLen > p.imgLen) memset(wr + p.imgLen, 0, p.memLen - p.imgLen);
   const uint8_t* rel = b + HDR + p.imgLen;
   uint32_t base = (uint32_t)(uintptr_t)mem;
   for (uint32_t i = 0; i < p.nrel; i++) {
     uint32_t off = rd32(rel + 4 * i);
-    uint32_t v = rd32(mem + off) + base;
-    memcpy(mem + off, &v, 4);
+    uint32_t v = rd32(wr + off) + base;
+    memcpy(wr + off, &v, 4);
   }
+  stage(4);
   asm volatile("fence.i" ::: "memory");
+  stage(5, base + p.entry);
   const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry))();
+  stage(6);
   bool good = ops && ops->version == DRV_API_VERSION && ops->open && ops->close && ops->methods && ops->nmethods > 0 && ops->nmethods <= 16;
   for (int i = 0; good && i < ops->nmethods; i++) {
     const drv_method_t& m = ops->methods[i];
@@ -162,6 +183,7 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
       if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;   // الإلزامي قبل الاختياري
     }
   }
+  if (good) stage(7);
   if (!good) { execFree(mem); if (err) *err = "bad driver ops"; return false; }
   DrvEntry& d = g_drv[slot];
   memset(&d, 0, sizeof(d));
@@ -184,6 +206,14 @@ static uint8_t* readFile(const String& path, size_t* n) {
 // حماية: يُكتب اسم الملف قبل تحميله ويُمحى بعده. إن بقي عند الإقلاع فقد انهار الجهاز أثناء تحميله فيُحجَر.
 #define LOADING_MARK DRV_DIR "/.loading"
 void drv_boot_load() {
+  {
+    esp_reset_reason_t r = esp_reset_reason();
+    bool crashed = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT;
+    g_prevReport = String("reset=") + (int)r + (crashed ? " (crash)" : "");
+    if (g_stageMagic == 0xD15C0DE5 && g_stage) g_prevReport += String(" last-load-stage=") + stageName(g_stage) + " addr=0x" + String(g_stageAddr, HEX);
+    g_stageMagic = 0; g_stage = 0;
+    Serial.println("[drv] " + g_prevReport);
+  }
   if (!g_mux) g_mux = xSemaphoreCreateRecursiveMutex();
   if (!LittleFS.exists(DRV_DIR)) return;
   if (LittleFS.exists(LOADING_MARK)) {
@@ -256,5 +286,6 @@ String drv_list_text() {
   String s;
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i])
     s += String(g_drv[i].name) + " v" + g_drv[i].version + "  file=" + g_drv[i].fileSize + "B ram=" + g_drv[i].memSize + "B users=" + g_drv[i].users + "\n";
-  return s.length() ? s : String("no drivers");
+  if (!s.length()) s = "no drivers\n";
+  return s + "boot: " + g_prevReport;
 }
