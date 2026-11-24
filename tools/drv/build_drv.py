@@ -40,6 +40,17 @@ def pack_image(so):
     img_len = max(l[0] + l[2] for l in loads)
     img = bytearray(img_len)
     for va, off, fsz, _ in loads: img[va:va + fsz] = d[off:off + fsz]
+    # أي رمز غير معرَّف (مثل __divdi3 غير الموجود) يعني قفزة إلى العنوان 0 على الجهاز: نرفضه هنا
+    e_shoff, e_shentsize, e_shnum = struct.unpack_from('<III', d, 32)[0], *struct.unpack_from('<HH', d, 46)
+    for i in range(e_shnum):
+        sh = struct.unpack_from('<IIIIIIIIII', d, e_shoff + i * e_shentsize)
+        if sh[1] == 11:   # SHT_DYNSYM
+            strtab = struct.unpack_from('<IIIIIIIIII', d, e_shoff + sh[6] * e_shentsize)
+            for k in range(1, sh[5] // 16):
+                st_name, _, _, _, _, st_shndx = struct.unpack_from('<IIIBBH', d, sh[4] + k * 16)
+                if st_shndx == 0:
+                    nm = d[strtab[4] + st_name:d.index(b'\0', strtab[4] + st_name)].decode()
+                    sys.exit('رمز غير معرَّف في الدرايفر: %s (أضفه إلى tools/drv/drvrt.c أو تجنّب استعماله)' % nm)
     relocs = []
     # جدول deinamic: DT_RELA(7) DT_RELASZ(8) DT_REL(17) DT_RELSZ(18) — العناوين افتراضية = إزاحات ملف (نقرؤها عبر المقاطع)
     def va2off(va):
