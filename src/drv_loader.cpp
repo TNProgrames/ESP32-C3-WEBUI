@@ -94,8 +94,34 @@ int drv_snapshot(DrvBrief* out, int max) {
   return n;
 }
 
+
+// ESP32-C3 + Arduino: لا كومة قابلة للتنفيذ (free=0). نحجز مجمّعًا ثابتًا في IRAM (قابل للتنفيذ والكتابة بنفس العنوان)
+// ونقسمه إلى كتل 1KB. الكلفة: DRV_POOL_KB من الذاكرة الداخلية دائمًا.
+#define DRV_POOL_KB 20
+#define DRV_BLK 1024
+static uint8_t g_pool[DRV_POOL_KB * DRV_BLK] __attribute__((section(".iram1.drvpool"), aligned(16)));
+static uint8_t g_blkLen[DRV_POOL_KB];     // طول المقطع بالكتل عند أول كتلة (0 = حرّة/تابعة)
+static uint8_t g_blkUsed[DRV_POOL_KB];
+static uint8_t* execAlloc(size_t n) {
+  size_t need = (n + DRV_BLK - 1) / DRV_BLK;
+  for (size_t i = 0; i + need <= DRV_POOL_KB; i++) {
+    size_t k = 0; while (k < need && !g_blkUsed[i + k]) k++;
+    if (k == need) {
+      for (k = 0; k < need; k++) g_blkUsed[i + k] = 1;
+      g_blkLen[i] = (uint8_t)need;
+      return g_pool + i * DRV_BLK;
+    }
+  }
+  return nullptr;
+}
+static void execFree(uint8_t* p) {
+  size_t i = (size_t)(p - g_pool) / DRV_BLK;
+  for (size_t k = 0; k < g_blkLen[i]; k++) g_blkUsed[i + k] = 0;
+  g_blkLen[i] = 0;
+}
+
 static void unloadSlot(int i) {
-  if (g_drv[i].mem) heap_caps_free(g_drv[i].mem);
+  if (g_drv[i].mem) execFree(g_drv[i].mem);
   memset(&g_drv[i], 0, sizeof(DrvEntry)); g_used[i] = false;
 }
 
@@ -111,18 +137,8 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
-  // ESP32-C3 مع Arduino: لا ذاكرة MALLOC_CAP_EXEC متاحة (free=0). لكن SRAM نفسها ظاهرة مرتين:
-  // عبر ناقل البيانات 0x3FC8xxxx وعبر ناقل التعليمات 0x4038xxxx (فرق ثابت). نحجز من الكومة العادية،
-  // وتبقى مؤشرات البيانات على عنوان البيانات، أما مؤشرات الشيفرة التي يستدعيها الفيرموير فتُحوَّل لعنوان التعليمات.
   size_t sz = (p.memLen + 15) & ~15u;
-  uint8_t* mem = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_EXEC);
-  uint32_t codeOff = 0;
-  if (!mem) {
-    mem = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    uint32_t a0 = (uint32_t)(uintptr_t)mem;
-    if (mem && a0 >= 0x3FC80000u && a0 + sz <= 0x3FCE0000u) codeOff = 0x700000u;
-    else { if (mem) heap_caps_free(mem); mem = nullptr; }
-  }
+  uint8_t* mem = execAlloc(sz);
   if (!mem) { if (err) *err = "no executable memory"; return false; }
   memcpy(mem, b + HDR, p.imgLen);
   if (p.memLen > p.imgLen) memset(mem + p.imgLen, 0, p.memLen - p.imgLen);
@@ -134,9 +150,7 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     memcpy(mem + off, &v, 4);
   }
   asm volatile("fence.i" ::: "memory");
-  const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry + codeOff))();
-  if (codeOff && ops && (uintptr_t)ops >= (uintptr_t)mem + codeOff && (uintptr_t)ops < (uintptr_t)mem + codeOff + sz)
-    ops = (const drv_ops_t*)((uintptr_t)ops - codeOff);   // العنوان المحسوب نسبةً للـpc يقع في فضاء التعليمات
+  const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry))();
   bool good = ops && ops->version == DRV_API_VERSION && ops->open && ops->close && ops->methods && ops->nmethods > 0 && ops->nmethods <= 16;
   for (int i = 0; good && i < ops->nmethods; i++) {
     const drv_method_t& m = ops->methods[i];
@@ -148,11 +162,7 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
       if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;   // الإلزامي قبل الاختياري
     }
   }
-  if (good && codeOff) {   // حوّل مؤشرات الشيفرة (open/close/fn) إلى عنوان التعليمات
-    drv_ops_t* wo = (drv_ops_t*)ops; wo->open = (decltype(wo->open))((uintptr_t)wo->open + codeOff); wo->close = (decltype(wo->close))((uintptr_t)wo->close + codeOff);
-    for (int i = 0; i < ops->nmethods; i++) { drv_method_t* wm = (drv_method_t*)&ops->methods[i]; wm->fn = (decltype(wm->fn))((uintptr_t)wm->fn + codeOff); }
-  }
-  if (!good) { heap_caps_free(mem); if (err) *err = "bad driver ops"; return false; }
+  if (!good) { execFree(mem); if (err) *err = "bad driver ops"; return false; }
   DrvEntry& d = g_drv[slot];
   memset(&d, 0, sizeof(d));
   strncpy(d.name, p.name, 15); strncpy(d.version, p.ver, 7);
