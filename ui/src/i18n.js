@@ -6,6 +6,9 @@ export const en = {
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Drivers
   'درايفرات': 'Drivers',
+  'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'لا توجد تطبيقات (اضغط 🔄)': 'No apps (press 🔄)',
+  'مثبّت': 'Installed', 'صفحة + canvas': 'Page + canvas', 'درايفر': 'driver', 'حذف التطبيق': 'Delete app', 'تم الحذف': 'Deleted', 'تعذر الحذف': 'Could not delete', 'الدرايفرات': 'Drivers', 'الإعدادات': 'Settings',
+
   'الاسم المحلي: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، دون شرطة في الأول أو الآخر': 'Local name: lowercase letters, digits and hyphen only, no leading/trailing hyphen',
   'متجر التطبيقات': 'App Store', 'التطبيقات': 'Apps', 'التطبيق سكريبت Lua جاهز مع الدرايفر الذي يحتاجه؛ يُثبَّت الاثنان معًا.': 'An app is a ready Lua script plus the driver it needs; both are installed together.',
   'لا توجد تطبيقات (اضغط جلب)': 'No apps (press Fetch)', 'تم تثبيت التطبيق': 'App installed', 'تم التشغيل': 'Started', 'تعذر التشغيل': 'Could not start', 'تعديل': 'Edit', 'تعذر فتح الملف': 'Could not open file',

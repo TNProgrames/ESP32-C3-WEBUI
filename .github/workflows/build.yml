@@ -84,7 +84,7 @@ jobs:
           cp $B/bootloader.bin dist/bootloader-$VER.bin
           cp $B/partitions.bin dist/partitions-$VER.bin
           [ -f $B/littlefs.bin ] && cp $B/littlefs.bin dist/littlefs-$VER.bin || true
-          cp dist-drivers/*.drv dist-drivers/*.lua dist-drivers/index.json dist/
+          cp dist-drivers/*.drv dist-drivers/*.lua dist-drivers/*.html dist-drivers/index.json dist/
           ls -l dist
 
       - uses: actions/upload-artifact@v4

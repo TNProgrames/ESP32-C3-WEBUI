@@ -66,24 +66,42 @@ export async function installFromStore(entry, indexUrl) {
   return installToDevice(await download(entry, indexUrl));
 }
 
-// تطبيق = سكريبت Lua + الدرايفر الذي يستعمله. يُحفظ السكريبت في /scripts/<name>.lua
+// تطبيق = سكريبت Lua + صفحة HTML/canvas اختيارية + الدرايفرات التي يحتاجها.
+// يُحفظ: /scripts/<name>.lua و/ui/<name>.html و/scripts/<name>.page (الربط). التشغيل بعدها من زر ▶.
+export const appDrivers = (app) => (Array.isArray(app.drivers) && app.drivers.length ? app.drivers : app.driver ? [app.driver] : []);
+
+async function save(path, content) {
+  const r = await fetch('/api/save?path=' + encodeURIComponent(path), {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ content }),
+  });
+  if (!r.ok) throw new Error('save ' + path + ' HTTP ' + r.status);
+}
+async function fetchText(indexUrl, file, sha) {
+  const r = await fetch(new URL(file, indexUrl).href, { cache: 'no-store' });
+  if (!r.ok) throw new Error(file + ' HTTP ' + r.status);
+  const buf = await r.arrayBuffer();
+  if (sha && globalThis.crypto?.subtle && (await sha256Hex(new Uint8Array(buf))) !== sha) throw new Error(file + ': sha256 mismatch');
+  return new TextDecoder().decode(buf);
+}
+
 export async function installApp(app, drivers, installed, indexUrl) {
-  const drv = drivers.find((d) => d.name === app.driver);
-  if (app.driver && !installed.some((i) => i.name === app.driver)) {
-    if (!drv) return { ok: false, error: 'driver ' + app.driver + ' not in store' };
+  for (const dn of appDrivers(app)) {
+    if (installed.some((i) => i.name === dn)) continue;
+    const drv = drivers.find((d) => d.name === dn);
+    if (!drv) return { ok: false, error: 'driver ' + dn + ' not in store' };
     const r = await installFromStore(drv, indexUrl);
     if (!r.ok) return r;
   }
-  const rr = await fetch(new URL(app.file, indexUrl).href, { cache: 'no-store' });
-  if (!rr.ok) throw new Error('HTTP ' + rr.status);
-  const code = await rr.text();
-  if (app.sha256 && globalThis.crypto?.subtle) {
-    const h = await sha256Hex(new TextEncoder().encode(code));
-    if (h !== app.sha256) throw new Error('sha256 mismatch');
+  const code = await fetchText(indexUrl, app.file, app.sha256);
+  const html = app.page_file ? await fetchText(indexUrl, app.page_file, app.page_sha256) : '';
+  await save('/scripts/' + app.name + '.lua', code);
+  if (html) {
+    await fetch('/api/mkdir?path=/ui', { method: 'POST', headers: authHeaders() });
+    await save('/ui/' + app.name + '.html', html);
+    await save('/scripts/' + app.name + '.page', '/ui/' + app.name + '.html');
   }
-  const body = new URLSearchParams({ content: code });
-  const r = await fetch('/api/save?path=' + encodeURIComponent('/scripts/' + app.name + '.lua'), { method: 'POST', headers: authHeaders(), body });
-  return { ok: r.ok, error: r.ok ? '' : 'HTTP ' + r.status };
+  return { ok: true, error: '' };
 }
 
 export async function getMode() {

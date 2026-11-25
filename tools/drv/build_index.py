@@ -75,8 +75,20 @@ def main():
         code = open(lua, 'rb').read()
         with open(os.path.join(args.out_dir, name + '.lua'), 'wb') as f:
             f.write(code)
-        apps.append({'name': name, 'title': m.get('title', name), 'desc': m.get('desc', ''), 'driver': m.get('driver', ''),
-                     'file': name + '.lua', 'size': len(code), 'sha256': hashlib.sha256(code).hexdigest()})
+        drivers = m.get('drivers') or ([m['driver']] if m.get('driver') else [])
+        entry = {'name': name, 'title': m.get('title', name), 'desc': m.get('desc', ''), 'icon': m.get('icon', '📦'),
+                 'category': m.get('category', 'tools'), 'driver': drivers[0] if drivers else '', 'drivers': drivers,
+                 'file': name + '.lua', 'size': len(code), 'sha256': hashlib.sha256(code).hexdigest()}
+        html = os.path.join(apps_root, name + '.html')
+        if m.get('page') and os.path.isfile(html):             # صفحة HTML/canvas ≤ 24KB تُحفظ في /ui/<name>.html
+            page = open(html, 'rb').read()
+            if len(page) > 24 * 1024: raise SystemExit(f'{name}.html > 24KB')
+            with open(os.path.join(args.out_dir, name + '.html'), 'wb') as f:
+                f.write(page)
+            entry.update(page_file=name + '.html', page_size=len(page), page_sha256=hashlib.sha256(page).hexdigest())
+        for d in drivers:
+            if d not in [e['name'] for e in entries]: raise SystemExit(f'{name}: driver {d} not found')
+        apps.append(entry)
 
     index_path = os.path.join(args.out_dir, 'index.json')
     with open(index_path, 'w', encoding='utf-8') as f:

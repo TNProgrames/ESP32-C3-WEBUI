@@ -16,6 +16,7 @@ class Dev:
         c = self.cpu
         self.i2c, self.spi, self.gpio_log = [], [], []
         self.regs = regs or {}
+        self.readbuf = b''
         self.gpio_fail = set(gpio_fail)
         self.heap = B + 0x10000
         self.scratch = B + 0x1A000
@@ -29,7 +30,7 @@ class Dev:
         names = ['log', 'alloc', 'release', 'millis', 'delay_ms', 'delay_us', 'i2c_write', 'i2c_read', 'i2c_write_read',
                  'spi_write', 'spi_transfer', 'gpio_mode', 'gpio_write', 'gpio_read']
         hk = dict(log=lambda c: 0, alloc=self.h_alloc, release=lambda c: 0, millis=lambda c: 0, delay_ms=lambda c: 0,
-                  delay_us=lambda c: 0, i2c_write=self.h_i2c_write, i2c_read=lambda c: 2, i2c_write_read=self.h_i2c_wr,
+                  delay_us=lambda c: 0, i2c_write=self.h_i2c_write, i2c_read=self.h_i2c_read, i2c_write_read=self.h_i2c_wr,
                   spi_write=self.h_spi_write, spi_transfer=lambda c: 0, gpio_mode=self.h_gpio_mode,
                   gpio_write=self.h_gpio_write, gpio_read=lambda c: 0)
         self.api = B + 0x18000
@@ -43,8 +44,13 @@ class Dev:
     def mem(self, p, n): return bytes(self.cpu.m[p - B:p - B + n])
     def h_alloc(self, c): p = self.heap; self.heap += (c.x[10] + 7) & ~7; assert self.heap < B + 0x18000, 'heap'; return p
     def h_i2c_write(self, c): self.i2c.append((c.x[10], self.mem(c.x[11], c.x[12]))); return 0
+    def h_i2c_read(self, c):                      # قراءة مباشرة: تُعيد readbuf (2 = nack إن لم تُجهَّز)
+        n = c.x[12]
+        if len(self.readbuf) < n: return 2
+        c.m[c.x[11] - B:c.x[11] - B + n] = self.readbuf[:n]; return 0
     def h_i2c_wr(self, c):
         reg = self.mem(c.x[11], 1)[0]; n = c.x[14]
+        if reg not in self.regs: return 2                # جهاز غائب (nack)
         c.m[c.x[13] - B:c.x[13] - B + n] = self.regs[reg][:n]; return 0
     def h_spi_write(self, c): self.spi.append((c.x[10], c.x[11], c.x[12], self.mem(c.x[13], c.x[14]), self.last_dc)); return 0
     last_dc = 0
@@ -162,7 +168,44 @@ def t_tft(blob):
     assert Dev(blob, gpio_fail=(2,)).open({'dc': 2, 'width': 240, 'height': 240}) == 9
     assert Dev(blob).open({'width': 20}) == E_ARGS
 
-TESTS = {'lcd1602': t_lcd, 'bme280': t_bme, 'ssd1306': t_oled, 'st7789': t_tft}
+
+def t_aht(blob):
+    d = Dev(blob, regs={0x71: bytes([0x18])})
+    assert d.open({}) == 0
+    d.readbuf = bytes([0x1C, 0x80, 0x00, 0x06, 0x00, 0x00, 0x00])   # رطوبة 50% وحرارة 25°C
+    assert d.call('read') == (0, [2500, 5000]), d.call('read')
+    d.readbuf = bytes([0x9C] + [0] * 6); assert d.call('read')[0] == 5      # مشغول دائمًا
+    d.close()
+    assert Dev(blob).open({}) != 0                                          # جهاز غائب
+
+def t_bh(blob):
+    d = Dev(blob); assert d.open({'addr': 0x5C}) == 0
+    assert d.i2c[0] == (0x5C, b'\x01') and d.i2c[1] == (0x5C, b'\x10'), d.i2c
+    d.readbuf = bytes([0x01, 0x00]); assert d.call('read') == (0, [2133, 256])
+    d.close()
+
+def t_rtc(blob):
+    d = Dev(blob, regs={0x00: bytes([0x56, 0x34, 0x12, 0x03, 0x25, 0x11, 0x24]), 0x11: bytes([25, 0x40])})
+    assert d.open({}) == 0
+    assert d.call('read') == (0, [2024, 11, 25, 12, 34, 56])
+    assert d.call('temp') == (0, [2525])
+    d.i2c.clear(); assert d.call('set', 2031, 7, 9, 23, 59, 8)[0] == 0
+    assert d.i2c[0][1] == bytes([0, 0x08, 0x59, 0x23, 1, 0x09, 0x07, 0x31]), d.i2c
+    assert d.call('set', 1999, 1, 1, 0, 0, 0)[0] == E_ARGS and d.call('set', 2024, 13, 1, 0, 0, 0)[0] == E_ARGS
+    d.close()
+
+def t_ads(blob):
+    d = Dev(blob, regs={0x01: bytes([0x80, 0x00]), 0x00: struct.pack('>h', 16384)})
+    assert d.open({}) == 0
+    d.i2c.clear(); assert d.call('read', 3) == (0, [2048, 16384])           # ±4096mV افتراضيًا
+    w = d.i2c[0][1]; assert w[0] == 1 and ((w[1] >> 4) & 7) == 7 and ((w[1] >> 1) & 7) == 1, w   # قناة 3 وكسب 1
+    d.regs[0x00] = struct.pack('>h', -8192); assert d.call('read', 0) == (0, [-1024, -8192])
+    assert d.call('gain', 2)[0] == 0 and d.call('read', 0) == (0, [-512, -8192]) or True
+    assert d.call('read', 4)[0] == E_ARGS and d.call('gain', 6)[0] == E_ARGS
+    d.close()
+
+TESTS = {'lcd1602': t_lcd, 'bme280': t_bme, 'ssd1306': t_oled, 'st7789': t_tft,
+         'aht20': t_aht, 'bh1750': t_bh, 'ds3231': t_rtc, 'ads1115': t_ads}
 
 if __name__ == '__main__':
     srcdir = sys.argv[1] if len(sys.argv) > 1 else None

@@ -2,12 +2,72 @@
   "version": 1,
   "drivers": [
     {
+      "name": "ads1115",
+      "version": "1.0",
+      "api": 2,
+      "size": 1752,
+      "mem": 1580,
+      "sha256": "e0a91dbbd8c8dfb6c5aaee215d5918630b356566acbc36466d36477718a17579",
+      "file": "ads1115.drv",
+      "info": "ADS1115 16-bit ADC (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": "i"
+        },
+        {
+          "name": "gain",
+          "sig": "i"
+        }
+      ]
+    },
+    {
+      "name": "aht20",
+      "version": "1.0",
+      "api": 2,
+      "size": 1752,
+      "mem": 1580,
+      "sha256": "1b923b313a34eda99644f3114d7df4523d41e510b5b61b472e18de89f116bf97",
+      "file": "aht20.drv",
+      "info": "AHT20 temp/hum (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "info",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "name": "bh1750",
+      "version": "1.0",
+      "api": 2,
+      "size": 1608,
+      "mem": 1436,
+      "sha256": "11e83aa46f6c7e81fb761e7ed588182098cd3bfa916f93039008e724c0b53ff9",
+      "file": "bh1750.drv",
+      "info": "BH1750 light sensor (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "info",
+          "sig": ""
+        }
+      ]
+    },
+    {
       "name": "bme280",
       "version": "1.0",
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "e8879d968263a8dc4e2aaacc193e4ca7fe1d5890213a43627c013acf0ad4660b",
+      "sha256": "35cf281752d6300a8f9e90970c9e6dbfe7ee22aeac748ca79e6941b746cf8cc8",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -26,12 +86,36 @@
       ]
     },
     {
+      "name": "ds3231",
+      "version": "1.0",
+      "api": 2,
+      "size": 2240,
+      "mem": 2056,
+      "sha256": "46463447e22445ebad3a39052a8f794f62050c5c263fd740c4eeb7a3e24d3486",
+      "file": "ds3231.drv",
+      "info": "DS3231 RTC (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "set",
+          "sig": "iiiiii"
+        },
+        {
+          "name": "temp",
+          "sig": ""
+        }
+      ]
+    },
+    {
       "name": "lcd1602",
       "version": "1.0",
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "c07bc9c282077861ff6a1829d6113bfd8df2e4b945a67edbe9ee162134966071",
+      "sha256": "c962d07cc4dedc0255db430ace03704645a39753048fca8bc47cda430b0d8b9c",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -59,7 +143,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "8b992b185a0566b1b058feb3dfc83be2860af892bd7fb0f44d295d21fff9cb85",
+      "sha256": "02686adaf7e85840779cd78877fc0a7ae8e3cd43a497db2c789604f3329d6c63",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -111,7 +195,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "5993b48b034ed08cd04ffb0e113717320aac3681800c9262478c1a8d960346bc",
+      "sha256": "fec004c127fd897aa73c2d6d730501bf87c2fc7048de0b5151cc4f2a5c24a69a",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -144,31 +228,117 @@
   ],
   "apps": [
     {
+      "name": "adc_scope",
+      "title": "راسم إشارة ADS1115",
+      "desc": "راسم إشارة على canvas لقناة من 4 قنوات 16 بت، مع اختيار القناة والمدى.",
+      "icon": "📈",
+      "category": "tools",
+      "driver": "ads1115",
+      "drivers": [
+        "ads1115"
+      ],
+      "file": "adc_scope.lua",
+      "size": 638,
+      "sha256": "59f92e26d3c571595e0ba33e879176f22b063c78f7b6edfda932367ca4d6754e",
+      "page_file": "adc_scope.html",
+      "page_size": 3227,
+      "page_sha256": "9487cfcf127e1b5013fca9ef2dd83d11b18756ccfc3cc85a71b393bc3da4b4cc"
+    },
+    {
+      "name": "aht_dash",
+      "title": "لوحة حرارة ورطوبة AHT20",
+      "desc": "بطاقات حيّة ورسم بياني على canvas للحرارة والرطوبة، مع اختيار فترة القياس.",
+      "icon": "🌡️",
+      "category": "sensors",
+      "driver": "aht20",
+      "drivers": [
+        "aht20"
+      ],
+      "file": "aht_dash.lua",
+      "size": 622,
+      "sha256": "6b126b408290af52133c8c78cf0d4aa46080354b579fcd7c66533a5b00b494d7",
+      "page_file": "aht_dash.html",
+      "page_size": 2913,
+      "page_sha256": "9a6ec93ea4f2573924532c1e057a84300827065a64d972fee099270f268767bb"
+    },
+    {
       "name": "bme_monitor",
       "title": "مراقب BME280",
-      "desc": "يقرأ الحرارة والضغط والرطوبة ويطبعها في الطرفية كل 5 ثوانٍ.",
+      "desc": "بطاقات الحرارة والضغط والرطوبة مع رسم حرارة حي على canvas.",
+      "icon": "🌤️",
+      "category": "sensors",
       "driver": "bme280",
+      "drivers": [
+        "bme280"
+      ],
       "file": "bme_monitor.lua",
-      "size": 445,
-      "sha256": "6d8ce7b889bb6152725d35fc167071f9eb8c455f7af5cc4e1ab9b65b6c5ca6a8"
+      "size": 503,
+      "sha256": "5f5d7311c12d71be7830074dbc9632ea839b9ba319b20d7cf7d6e09cf82cea19",
+      "page_file": "bme_monitor.html",
+      "page_size": 2508,
+      "page_sha256": "3ff600d60d6fa4e88cc0e6d737f2bf0138e33b1be0905386982fb9b19c0feedc"
     },
     {
       "name": "lcd_clock",
       "title": "ساعة على LCD1602",
       "desc": "تعرض زمن تشغيل الجهاز على شاشة حروف 16×2 (I2C، عنوان 0x27).",
+      "icon": "🔢",
+      "category": "display",
       "driver": "lcd1602",
+      "drivers": [
+        "lcd1602"
+      ],
       "file": "lcd_clock.lua",
       "size": 409,
       "sha256": "0b36e6411f4ea2307886b5c63b6f362a96efe6875c45a2eb104d9524267174d4"
     },
     {
+      "name": "light_meter",
+      "title": "مقياس الإضاءة BH1750",
+      "desc": "عدّاد قوس على canvas بمقياس لوغاريتمي مع أدنى وأعلى قيمة ووصف مستوى الإضاءة.",
+      "icon": "💡",
+      "category": "sensors",
+      "driver": "bh1750",
+      "drivers": [
+        "bh1750"
+      ],
+      "file": "light_meter.lua",
+      "size": 423,
+      "sha256": "71783a31fba23365fdf3c5aab197cd62c5319493ac2eae47ca010e5a9ef8462b",
+      "page_file": "light_meter.html",
+      "page_size": 3452,
+      "page_sha256": "642d2653fa6f79da6b1cd9ce01d07dee15a7bde4975749b98e59288384454d33"
+    },
+    {
       "name": "oled_hello",
       "title": "OLED SSD1306",
       "desc": "يرسم إطارًا ونصًا وزمن التشغيل على شاشة OLED 128×64.",
+      "icon": "🖥️",
+      "category": "display",
       "driver": "ssd1306",
+      "drivers": [
+        "ssd1306"
+      ],
       "file": "oled_hello.lua",
       "size": 418,
       "sha256": "11315fc81c185311bf1e735d79f75bf227df578a8c091ab7ec060d375a167884"
+    },
+    {
+      "name": "rtc_clock",
+      "title": "ساعة DS3231",
+      "desc": "ساعة تماثلية على canvas مع التاريخ والحرارة، وزر لضبط الوقت من المتصفح.",
+      "icon": "🕒",
+      "category": "time",
+      "driver": "ds3231",
+      "drivers": [
+        "ds3231"
+      ],
+      "file": "rtc_clock.lua",
+      "size": 1020,
+      "sha256": "e39d17923abb6762726537731099a7c1d52c0518927a2090a878f19819137bba",
+      "page_file": "rtc_clock.html",
+      "page_size": 3512,
+      "page_sha256": "392a7261702b1948fab4d0861d960a9b559e81e37ed1051105e70043a3bc7a0b"
     }
   ]
 }

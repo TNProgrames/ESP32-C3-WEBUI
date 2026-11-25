@@ -3,6 +3,7 @@
   import { api, apiRaw, authHeaders } from '../api.js';
   import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, getMode, setMode } from '../drvstore.js';
   import { t } from '../store.svelte.js';
+  import AppCards from './AppCards.svelte';
   import { lab } from '../lab.svelte.js';
 
   let { go = () => {} } = $props();
@@ -18,6 +19,8 @@
   let myScripts = $state([]);       // أسماء السكريبتات على الجهاز
   let mode = $state({ mode: 'auto', exec: false });
   let storeMsg = $state('');
+  let tab = $state('apps');          // apps | drivers | settings
+  let busyApp = $state('');
 
   // نموذج الاختبار
   let sel = $state('');
@@ -88,12 +91,18 @@
     busy = false; await loadMode(); refresh();
   }
   async function getApp(a) {
-    busy = true; msg = '';
+    busyApp = a.name; msg = '';
     try {
       const r = await installApp(a, store, list, storeUrl);
-      msg = r.ok ? t('تم تثبيت التطبيق') : t('تعذر التثبيت') + ': ' + r.error;
+      msg = r.ok ? '✅ ' + t('تم تثبيت التطبيق') : t('تعذر التثبيت') + ': ' + r.error;
     } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
-    busy = false; refresh(); loadScripts();
+    busyApp = ''; refresh(); loadScripts();
+  }
+  async function delApp(a) {
+    if (!confirm(t('حذف التطبيق') + ' ' + a.name + '؟')) return;
+    busyApp = a.name;
+    try { await apiRaw('/script/delete?name=' + encodeURIComponent(a.name)); msg = t('تم الحذف'); } catch { msg = t('تعذر الحذف'); }
+    busyApp = ''; loadScripts();
   }
   async function runApp(a) {
     try { await apiRaw('/script/runfile?name=' + encodeURIComponent(a.name)); msg = t('تم التشغيل'); } catch { msg = t('تعذر التشغيل'); }
@@ -166,9 +175,21 @@
 
   const tr = { i: 'int', s: 'str', b: 'bool', d: 'data' };
 </script>
-
 <div class="glass">
-  <h2 style="margin-top:0">🛒 {t('متجر التطبيقات')}</h2>
+  <h2 style="margin:0 0 8px">🛒 {t('متجر التطبيقات')}</h2>
+  <div class="row" style="gap:6px">
+    {#each [['apps', '📱', 'التطبيقات'], ['drivers', '🔌', 'الدرايفرات'], ['settings', '⚙️', 'الإعدادات']] as [id, ic, lb]}
+      <button class="btn {tab === id ? '' : 'ghost'}" style="flex:1" onclick={() => (tab = id)}>{ic} {t(lb)}</button>
+    {/each}
+  </div>
+  {#if msg}<div style="margin-top:8px;font-size:13px">{msg}</div>{/if}
+</div>
+
+{#if tab === 'apps'}
+  <AppCards {apps} installed={list} scripts={myScripts} busyName={busyApp} msg={storeMsg}
+    onInstall={getApp} onRun={runApp} onEdit={editApp} onRemove={delApp} onRefresh={loadStore} />
+{:else if tab === 'drivers'}
+<div class="glass">
   <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
     {t('درايفرات موقّعة تُحمَّل عند الإقلاع. سكريبت Lua يستعملها بـ drv.open(...) ولا يلمس العتاد مباشرة.')}
   </p>
@@ -183,42 +204,7 @@
       <div style="font-size:12px;direction:ltr;text-align:left;margin-top:2px">{d.methods.map((m) => m.name + '(' + [...m.sig].map((c) => tr[c.toLowerCase()] + (c === c.toUpperCase() ? '?' : '')).join(', ') + ')').join(' · ')}</div>
     </div>
   {/each}
-  {#if msg}<div style="margin-top:8px;font-size:13px">{msg}</div>{/if}
 </div>
-
-<div class="glass">
-  <h3 style="margin:0 0 8px">📱 {t('التطبيقات')}</h3>
-  <p style="color:var(--muted);font-size:12px;margin:0 0 8px">{t('التطبيق سكريبت Lua جاهز مع الدرايفر الذي يحتاجه؛ يُثبَّت الاثنان معًا.')}</p>
-  {#if !apps.length}<div style="color:var(--muted);font-size:13px">{storeMsg || t('لا توجد تطبيقات (اضغط جلب)')}</div>{/if}
-  {#each apps as a (a.name)}
-    {@const has = myScripts.includes(a.name)}
-    <div class="net" style="display:block;margin-bottom:8px">
-      <div class="row" style="justify-content:space-between">
-        <b>{a.title || a.name}</b>
-        <span style="font-size:11px;color:var(--muted)">🔌 {a.driver}{list.some((d) => d.name === a.driver) ? ' ✓' : ''}</span>
-      </div>
-      <div style="color:var(--muted);font-size:12px;margin:4px 0 8px">{a.desc}</div>
-      <div class="row" style="gap:6px">
-        <button class="btn" disabled={busy} onclick={() => getApp(a)}>{has ? t('تحديث') : t('تثبيت')}</button>
-        {#if has}
-          <button class="btn green" onclick={() => runApp(a)}>▶ {t('تشغيل')}</button>
-          <button class="btn ghost" onclick={() => editApp(a)}>✏ {t('تعديل')}</button>
-        {/if}
-      </div>
-    </div>
-  {/each}
-</div>
-
-<div class="glass">
-  <h3 style="margin:0 0 8px">⚙️ {t('وضع تشغيل الدرايفرات')}</h3>
-  <select value={mode.mode} disabled={busy} onchange={(e) => changeMode(e.currentTarget.value)}>
-    <option value="auto">{t('تلقائي (المعالج إن أمكن وإلا المفسّر)')}</option>
-    <option value="vm">{t('المفسّر VM (معزول، أبطأ)')}</option>
-    <option value="native">{t('المعالج (سريع، يتطلب ذاكرة تنفيذ)')}</option>
-  </select>
-  <div style="color:var(--muted);font-size:12px;margin-top:6px">{mode.exec ? t('ذاكرة التنفيذ متاحة على هذا الجهاز') : t('ذاكرة التنفيذ غير متاحة: سيعمل المفسّر')}</div>
-</div>
-
 <div class="glass">
   <h3 style="margin:0 0 8px">⬆️ {t('رفع ملف درايفر')}</h3>
   <input type="file" accept=".drv" onchange={(e) => (file = e.currentTarget.files[0])} disabled={busy} />
@@ -271,6 +257,19 @@
   </div>
   <pre style="direction:ltr;text-align:left;font-size:12px;margin:8px 0 0;overflow:auto;white-space:pre-wrap">{genCode()}</pre>
 </div>
+{/if}
+
+{:else}
+<div class="glass">
+  <h3 style="margin:0 0 8px">⚙️ {t('وضع تشغيل الدرايفرات')}</h3>
+  <select value={mode.mode} disabled={busy} onchange={(e) => changeMode(e.currentTarget.value)}>
+    <option value="auto">{t('تلقائي (المعالج إن أمكن وإلا المفسّر)')}</option>
+    <option value="vm">{t('المفسّر VM (معزول، أبطأ)')}</option>
+    <option value="native">{t('المعالج (سريع، يتطلب ذاكرة تنفيذ)')}</option>
+  </select>
+  <div style="color:var(--muted);font-size:12px;margin-top:6px">{mode.exec ? t('ذاكرة التنفيذ متاحة على هذا الجهاز') : t('ذاكرة التنفيذ غير متاحة: سيعمل المفسّر')}</div>
+</div>
+
 {/if}
 
 <div class="glass">

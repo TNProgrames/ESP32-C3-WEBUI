@@ -110,6 +110,10 @@ lcd:close()                                               -- اختياري: ي�
 | `lcd1602` | `clear()` `text(r,c,s)` `cursor(r,c)` `backlight(b)` | I2C (0x27) |
 | `ssd1306` | `clear` `show` `pixel(x,y,on)` `line` `rect` `circle` `bar` `text(x,y,s)` `invert` `contrast` (128×64/32، SH1106 اختياري) | I2C |
 | `bme280` | `read()` ← `temp_x100, press_pa, hum_x100` · `chip_id()` · `info()` | I2C |
+| `aht20` | `read()` ← `temp_x100, hum_x100` · `info()` | I2C (0x38) |
+| `bh1750` | `read()` ← `lux_x10, raw` · `info()` | I2C (0x23/0x5C) |
+| `ds3231` | `read()` ← `y,mo,d,h,mi,s` · `set(y,mo,d,h,mi,s)` · `temp()` | I2C (0x68) |
+| `ads1115` | `read(ch)` ← `mv, raw` · `gain(g)` (cfg: `gain`) | I2C (0x48) |
 | `st7789` | `clear(c)` `pixel` `rect` `text(x,y,s,fg,bg)` `backlight` `invert` | SPI (`spi.begin` أولًا) |
 
 كلها تُختبر في CI داخل محاكي RV32IM (`tools/drv/test_drivers.py`) — لم تُجرَّب على العتاد بعد.
@@ -138,3 +142,10 @@ lcd:close()                                               -- اختياري: ي�
 - يستقبل جسم المكتبة اسمها معاملًا (`...`). التداخل (مكتبة تطلب مكتبة) حتى 4 مستويات؛ وتُكتشف الدورات.
 - الدالة `require` تعمل فقط على `/scripts/lib/`، ولا تقرأ أي ملف آخر.
 - مكتبة `util` التجريبية في أمثلة المختبر: «Library: util (save as lib)» ثم «Use library: util».
+
+## تطبيقات المتجر (`apps/`)
+التطبيق = `apps/<name>.lua` + `apps/<name>.json` (`title, desc, icon, category, driver|drivers, page`) + `apps/<name>.html` اختياري.
+- الصفحة HTML/canvas (≤24KB) تتحكم بعلب div وتتواصل مع السكريبت عبر `esp.on / esp.send` فقط (انظر `ui.md`).
+- `build_index.py` يضيفها إلى `index.json` (`apps[]`: `file, page_file, drivers, category, sha256, page_sha256`).
+- التثبيت من الواجهة يضع: `/scripts/<name>.lua` و`/ui/<name>.html` و`/scripts/<name>.page` ويثبّت الدرايفرات الناقصة.
+- المتوفر: `aht_dash` `light_meter` `rtc_clock` `adc_scope` `bme_monitor` (بصفحات) و`lcd_clock` `oled_hello`.
