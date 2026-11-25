@@ -7,12 +7,17 @@
   let msg = $state(''); let ok = $state(true);
 
   $effect(() => {
-    api('/settings/get_comm').then(r => (c = r)).catch(() => {});
+    api('/settings/get_comm').then(r => (c = { ...r, localhost: String(r.localhost || '').replace(/\.local$/i, '') })).catch(() => {});
     api('/settings/get_pin').then(r => (pin = r.pin)).catch(() => {});
   });
 
+  // قيود الاسم المحلي: a-z و0-9 وشرطة، بلا شرطة في الأول أو الآخر، حتى 32
+  const cleanHost = (v) => v.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32);
+  const hostOk = $derived(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(c.localhost));
+
   async function save(e) {
     e.preventDefault();
+    if (!hostOk) { ok = false; msg = t('الاسم المحلي: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، دون شرطة في الأول أو الآخر'); return; }
     try {
       await api('/settings/save_comm', c);
       await api('/settings/save_pin', { pin });
@@ -24,7 +29,10 @@
 <form class="glass" onsubmit={save}>
   <h2>🔗 {t('الاتصال')}</h2>
   <label for="l">{t('المضيف المحلي')}</label>
-  <input id="l" bind:value={c.localhost} maxlength="32" />
+  <div class="row" style="gap:6px;direction:ltr">
+    <input id="l" style="flex:1;min-width:0" bind:value={c.localhost} oninput={() => (c.localhost = cleanHost(c.localhost))} maxlength="32" placeholder="esp32" autocapitalize="none" spellcheck="false" />
+    <span style="color:var(--muted)">.local</span>
+  </div>
   <label for="h">{t('مضيف الإنترنت')}</label>
   <input id="h" bind:value={c.host} maxlength="32" />
   <label for="pn">{t('رقم PIN لإعادة الضبط')}</label>

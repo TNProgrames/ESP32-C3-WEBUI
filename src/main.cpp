@@ -222,6 +222,14 @@ static void cleanHost(char* h) {
   o[n] = 0; strcpy(h, n ? o : "esp32");
 }
 // الاسم المحلي = إعداد «المضيف المحلي» في تبويب الاتصال (مثل esp32.local)
+// قيود الاسم المحلي: 1–32 حرفًا من a-z و0-9 والشرطة، بلا شرطة في الأول أو الآخر (يُقبل لاحقة .local وتُحذف)
+static bool validHost(String h) {
+  if (h.endsWith(".local")) h.remove(h.length() - 6);
+  int n = h.length();
+  if (n < 1 || n > 32 || h[0] == '-' || h[n - 1] == '-') return false;
+  for (int i = 0; i < n; i++) { char c = h[i]; if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false; }
+  return true;
+}
 static void loadHost() {
   char h[33] = "esp32.local"; getJson("/settings.json", "0_Obj.localhost", h, sizeof h);
   char* dot = strchr(h, '.'); if (dot) *dot = 0;          // نحتفظ بالجزء قبل أول نقطة
@@ -716,6 +724,7 @@ void setupServerWeb() {
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"]);
         wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
       } else if (type == 1) { // Comm
+        if (doc["localhost"].is<const char*>() && !validHost(String(doc["localhost"].as<const char*>()))) { request->send(400); return; }
         updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
         mdnsApplyPending = true;   // يسري فورًا بلا إعادة تشغيل
         updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"]);
