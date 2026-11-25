@@ -12,7 +12,7 @@
 #define DRV_E_FAULT 99          // الدرايفر انهار داخل المفسّر (ذاكرة/تعليمة/ميزانية)
 struct DrvMethodInfo { const char* name; const char* sig; uint32_t fn; };            // name/sig تشيران إلى ذاكرة الدرايفر
 struct DrvOps { const char* name; const char* info; int nmethods; DrvMethodInfo methods[DRV_MAX_METHODS]; uint32_t open, close; };
-struct DrvEntry { char name[16]; char version[8]; uint32_t fileSize; uint32_t memSize; DrvOps ops; DrvVM vm; uint8_t* mem; int users; };
+struct DrvEntry { char name[16]; char version[8]; uint32_t fileSize; uint32_t memSize; DrvOps ops; DrvVM vm; uint8_t* mem; bool native; int users; };   // native: يعمل مباشرة من ذاكرة قابلة للتنفيذ (إن وُجدت) وإلا داخل المفسّر
 
 void drv_boot_load();                                            // عند الإقلاع: يحمّل كل /drivers/*.drv الصالحة (مع حماية من الانهيار)
 bool drv_install(const uint8_t* buf, size_t len, String* err);   // يتحقق ثم يحفظ ثم يحمّل (يستبدل النسخة القديمة إن لم تكن مستعملة)
@@ -26,6 +26,7 @@ void drv_release(DrvEntry* e);                                   // يفك ال�
 int  drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx);
 int  drv_vm_invoke(DrvEntry* d, int method, uint32_t ctx, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret);
 void drv_vm_close(DrvEntry* d, uint32_t ctx);
+const drv_api_t* drv_native_api();                                // جدول api الحقيقي للدرايفرات الأصلية (lua_engine.cpp)
 uint32_t drv_host_call(DrvVM* vm, int idx, const uint32_t* a);   // تنفّذه طبقة الربط (lua_engine.cpp): دوال api للدرايفر
 String drv_list_json();
 String drv_list_text();

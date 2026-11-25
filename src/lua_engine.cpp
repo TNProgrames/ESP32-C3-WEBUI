@@ -1335,6 +1335,12 @@ uint32_t drv_host_call(DrvVM* v, int idx, const uint32_t* a) {
   return BAD;
 }
 
+// جدول api الحقيقي للدرايفرات الأصلية (حين تتوفر ذاكرة تنفيذ)؛ المؤشرات هنا حقيقية فلا ترجمة
+static const drv_api_t NATIVE_API = { DRV_API_VERSION, apiLog, apiAlloc, apiRelease, apiMillis, apiDelayMs, apiDelayUs,
+                                      apiI2cWrite, apiI2cRead, apiI2cWriteRead,
+                                      apiSpiWrite, apiSpiTransfer, apiGpioMode, apiGpioWrite, apiGpioRead };
+const drv_api_t* drv_native_api() { return &NATIVE_API; }
+
 struct DrvHandle { DrvEntry* e; uint32_t ctx; };
 
 static void drvClose(lua_State* L, DrvHandle* h) {

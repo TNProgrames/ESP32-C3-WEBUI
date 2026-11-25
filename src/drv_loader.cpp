@@ -5,6 +5,7 @@
 #include <mbedtls/ecdsa.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/bignum.h>
+#include <esp_heap_caps.h>
 #include <ArduinoJson.h>
 #include <string.h>
 #include <freertos/FreeRTOS.h>
@@ -95,7 +96,7 @@ int drv_snapshot(DrvBrief* out, int max) {
 
 
 static void unloadSlot(int i) {
-  free(g_drv[i].mem);
+  if (g_drv[i].native) heap_caps_free(g_drv[i].mem); else free(g_drv[i].mem);
   memset(&g_drv[i], 0, sizeof(DrvEntry)); g_used[i] = false;
 }
 
@@ -129,6 +130,48 @@ struct Marshal {
   }
 };
 
+
+// ---------- المسار الأصلي: إن وُفّرت ذاكرة قابلة للتنفيذ (sdkconfig.defaults يعطّل MEMPROT) ----------
+// ESP32-C3: IRAM (0x4038xxxx) وDRAM (0x3FC8xxxx) هما نفس SRAM بفارق 0x700000: نكتب ونقرأ عبر DRAM وننفّذ عبر IRAM.
+static inline uintptr_t dramAddr(uintptr_t a) { return (a >= 0x40380000u && a < 0x403E0000u) ? a - 0x700000u : a; }
+template <class T> static inline T* dram(const T* p) { return (T*)dramAddr((uintptr_t)p); }
+
+static bool loadNative(const Parsed& p, const uint8_t* b, size_t fileSize, int slot, uint8_t* mem, size_t asz, String* err) {
+  uint32_t addr = (uint32_t)(uintptr_t)mem;
+  uint8_t* wr = (uint8_t*)dramAddr(addr);
+  uint32_t base = (addr >= 0x3FC80000u && addr < 0x3FCE0000u) ? addr + 0x700000u : addr;
+  memcpy(wr, b + HDR, p.imgLen);
+  if (asz > p.imgLen) memset(wr + p.imgLen, 0, asz - p.imgLen);
+  const uint8_t* rel = b + HDR + p.imgLen;
+  for (uint32_t i = 0; i < p.nrel; i++) { uint32_t off = rd32(rel + 4 * i); put32(wr + off, get32(wr + off) + base); }
+  asm volatile("fence rw, rw\n\tfence.i" ::: "memory");
+  const drv_ops_t* o = dram(((drv_entry_t)(uintptr_t)(base + p.entry))());
+  bool good = o && o->version == DRV_API_VERSION && o->open && o->close && o->methods && o->nmethods > 0 && o->nmethods <= DRV_MAX_METHODS;
+  DrvEntry d; memset(&d, 0, sizeof d);
+  if (good) {
+    d.ops.nmethods = o->nmethods; d.ops.name = dram(o->name); d.ops.info = dram(o->info);
+    d.ops.open = (uint32_t)(uintptr_t)o->open; d.ops.close = (uint32_t)(uintptr_t)o->close;
+    good = d.ops.name && d.ops.info;
+    const drv_method_t* ms = dram(o->methods);
+    for (int i = 0; good && i < o->nmethods; i++) {
+      DrvMethodInfo& m = d.ops.methods[i];
+      m.name = dram(ms[i].name); m.sig = dram(ms[i].sig); m.fn = (uint32_t)(uintptr_t)ms[i].fn;
+      good = m.name && m.sig && m.fn && strlen(m.sig) <= DRV_MAX_ARGS;
+      bool optional = false;
+      for (const char* c = m.sig; good && *c; c++) {
+        char l = (char)tolower((unsigned char)*c);
+        if (l != 'i' && l != 's' && l != 'b' && l != 'd') good = false;
+        if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;
+      }
+    }
+  }
+  if (!good) { heap_caps_free(mem); if (err) *err = "bad driver ops"; return false; }
+  strncpy(d.name, p.name, 15); strncpy(d.version, p.ver, 7);
+  d.fileSize = (uint32_t)fileSize; d.memSize = (uint32_t)asz; d.mem = mem; d.native = true;
+  g_drv[slot] = d; g_used[slot] = true;
+  return true;
+}
+
 static bool vmRun(DrvEntry* d, uint32_t fn, const uint32_t* a, int n, uint32_t* r) {
   int f = drv_vm_call(&d->vm, fn, a, n, r);
   if (f) { Serial.printf("[drv] %s: vm fault %d at pc=0x%x\n", d->name, f, (unsigned)d->vm.pc); return false; }
@@ -136,6 +179,7 @@ static bool vmRun(DrvEntry* d, uint32_t fn, const uint32_t* a, int n, uint32_t* 
 }
 
 int drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx) {
+  if (d->native) { void* c = nullptr; int rc = ((int (*)(void**, const drv_api_t*, const drv_kv_t*, int))(uintptr_t)d->ops.open)(&c, drv_native_api(), cfg, ncfg); *ctx = (uint32_t)(uintptr_t)c; return rc; }
   Marshal m(&d->vm);
   uint32_t kvOff = m.strOff; m.strOff += 12 * (uint32_t)ncfg;
   for (int i = 0; i < ncfg; i++) {
@@ -152,6 +196,13 @@ int drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx) {
 }
 
 int drv_vm_invoke(DrvEntry* d, int mi, uint32_t ctx, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret) {
+  if (d->native) {
+    *nret = 0;
+    int rc = ((drv_fn_t)(uintptr_t)d->ops.methods[mi].fn)((void*)(uintptr_t)ctx, args, nargs, ret, nret);
+    if (*nret < 0) *nret = 0; if (*nret > DRV_MAX_ARGS) *nret = DRV_MAX_ARGS;
+    for (int i = 0; i < *nret; i++) if (ret[i].type == DRV_STR || ret[i].type == DRV_BLOB) ret[i].v.p = dram(ret[i].v.p);
+    return rc;
+  }
   Marshal m(&d->vm);
   for (int i = 0; i < nargs; i++) if (!m.val(SC_ARGS + 8 * i, args[i])) return DRV_E_ARGS;
   uint32_t a[5] = { ctx, m.guest(SC_ARGS), (uint32_t)nargs, m.guest(SC_RET), m.guest(SC_NRET) }, rc = 0;
@@ -174,6 +225,7 @@ int drv_vm_invoke(DrvEntry* d, int mi, uint32_t ctx, const drv_val_t* args, int 
 }
 
 void drv_vm_close(DrvEntry* d, uint32_t ctx) {
+  if (d->native) { ((void (*)(void*))(uintptr_t)d->ops.close)((void*)(uintptr_t)ctx); return; }
   uint32_t a[1] = { ctx }, r;
   vmRun(d, d->ops.close, a, 1, &r);
 }
@@ -189,6 +241,11 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
   } else {
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
+  }
+  size_t nsz = (p.memLen + 15) & ~15u;
+  if (heap_caps_get_free_size(MALLOC_CAP_EXEC) >= nsz) {      // ذاكرة قابلة للتنفيذ متاحة ← تنفيذ أصلي سريع
+    uint8_t* nm = (uint8_t*)heap_caps_aligned_alloc(16, nsz, MALLOC_CAP_EXEC | MALLOC_CAP_INTERNAL);
+    if (nm) return loadNative(p, b, fileSize, slot, nm, nsz, err);
   }
   size_t asz = drv_vm_arena_size(p.memLen);
   uint8_t* mem = (uint8_t*)calloc(1, asz);
