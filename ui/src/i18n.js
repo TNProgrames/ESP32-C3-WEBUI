@@ -6,6 +6,7 @@ export const en = {
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Drivers
   'درايفرات': 'Drivers',
+  'الاسم المحلي': 'Local name',
   'متجر التطبيقات': 'App Store', 'التطبيقات': 'Apps', 'التطبيق سكريبت Lua جاهز مع الدرايفر الذي يحتاجه؛ يُثبَّت الاثنان معًا.': 'An app is a ready Lua script plus the driver it needs; both are installed together.',
   'لا توجد تطبيقات (اضغط جلب)': 'No apps (press Fetch)', 'تم تثبيت التطبيق': 'App installed', 'تم التشغيل': 'Started', 'تعذر التشغيل': 'Could not start', 'تعديل': 'Edit', 'تعذر فتح الملف': 'Could not open file',
   'وضع تشغيل الدرايفرات': 'Driver execution mode', 'تلقائي (المعالج إن أمكن وإلا المفسّر)': 'Auto (CPU if possible, else interpreter)', 'المفسّر VM (معزول، أبطأ)': 'Interpreter VM (sandboxed, slower)', 'المعالج (سريع، يتطلب ذاكرة تنفيذ)': 'CPU (fast, needs executable memory)',

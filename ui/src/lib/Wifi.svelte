@@ -3,7 +3,7 @@
   import { t } from '../store.svelte.js';
   import PassInput from './PassInput.svelte';
 
-  let f = $state({ mode: 'AP', ap_ssid: '', ap_pass: '', nets: [] });
+  let f = $state({ hostname: 'esp32', mode: 'AP', ap_ssid: '', ap_pass: '', nets: [] });
   const MAX_NETS = 6;
   let found = $state([]);
   let scanning = $state(false);
@@ -43,6 +43,10 @@
 
 <form class="glass" onsubmit={save}>
   <h2>📶 {t('إعدادات الواي فاي')}</h2>
+  <label for="hn">{t('الاسم المحلي')}</label>
+  <div class="row" style="gap:6px;direction:ltr">
+    <input id="hn" style="flex:1;min-width:0" bind:value={f.hostname} maxlength="32" placeholder="esp32" /><span style="color:var(--muted)">.local</span>
+  </div>
   <label for="m">{t('الوضع')}</label>
   <select id="m" bind:value={f.mode}>
     <option value="AP">{t('AP (نقطة وصول)')}</option>

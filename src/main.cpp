@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
@@ -25,6 +26,7 @@ char wifissid[33] = "ESP32_STA";
 char wifipass[33] = "12345678";
 char apwifissid[33] = "ESP32_AP";
 char apwifipass[33] = "12345678";
+char hostname_[33] = "esp32";   // الاسم المحلي: <hostname>.local
 
 // --- Network Settings ---
 const char* access_key = "1234"; // مفتاح الوصول لصفحة الطوارئ /em
@@ -211,6 +213,19 @@ static void loadNets(JsonDocument& d) {
   }
 }
 
+// اسم المضيف: أحرف صغيرة وأرقام وشرطة فقط (حد DNS)، وإلا esp32
+static void cleanHost(char* h) {
+  char o[33]; int n = 0;
+  for (int i = 0; h[i] && n < 32; i++) { char c = (char)tolower((unsigned char)h[i]); if (isalnum((unsigned char)c) || (c == '-' && n > 0)) o[n++] = c; }
+  while (n > 0 && o[n - 1] == '-') n--;
+  o[n] = 0; strcpy(h, n ? o : "esp32");
+}
+static void startMdns() {
+  MDNS.end();
+  if (MDNS.begin(hostname_)) { MDNS.addService("http", "tcp", 80); logPrintf("mDNS: http://%s.local\n", hostname_); }
+  else logPrintf("mDNS failed\n");
+}
+
 // --- Apply WiFi Settings ---
 
 void applyWiFi() {
@@ -225,10 +240,12 @@ void applyWiFi() {
   getJson("/settings.json", "0_Obj.wifi.pass", wifipass, sizeof(wifipass));
   getJson("/settings.json", "0_Obj.wifi.ap_ssid", apwifissid, sizeof(apwifissid));
   getJson("/settings.json", "0_Obj.wifi.ap_pass", apwifipass, sizeof(apwifipass));
+  strcpy(hostname_, "esp32"); getJson("/settings.json", "0_Obj.wifi.hostname", hostname_, sizeof(hostname_)); cleanHost(hostname_);
 
   bool wantSta = (strcmp(wifimode, "STA") == 0 || strcmp(wifimode, "AP_STA") == 0);
   bool wantAp  = !wantSta || strcmp(wifimode, "AP_STA") == 0; // أي قيمة غير معروفة = AP
 
+  WiFi.setHostname(hostname_);
   // اضبط الوضع أولاً ثم شغّل الواجهات
   WiFi.mode(wantSta && wantAp ? WIFI_AP_STA : (wantSta ? WIFI_STA : WIFI_AP));
 
@@ -267,6 +284,7 @@ void applyWiFi() {
       WiFi.softAP("RECOVERY_MODE", "12345678");
     }
   }
+  startMdns();
   if (WiFi.status() == WL_CONNECTED) logPrintf("WiFi connected: %s\n", WiFi.localIP().toString().c_str());
   wifiIsWorking = false;
 }
@@ -689,6 +707,7 @@ void setupServerWeb() {
         updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", doc["ap_ssid"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"]);
+        if (doc["hostname"].is<const char*>()) { char hb[33]; strlcpy(hb, doc["hostname"] | "esp32", sizeof hb); cleanHost(hb); doc["hostname"] = hb; updateOrCreateJson("/settings.json", "0_Obj.wifi.hostname", doc["hostname"]); }
         wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
       } else if (type == 1) { // Comm
         updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
@@ -762,8 +781,9 @@ void setupServerWeb() {
     getJson("/settings.json", "0_Obj.wifi.mode", m, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_ssid", ap_s, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_pass", ap_p, 33);
+    char hn[33] = "esp32"; getJson("/settings.json", "0_Obj.wifi.hostname", hn, 33); cleanHost(hn);
     JsonDocument nd; loadNets(nd);
-    JsonDocument r; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
+    JsonDocument r; r["hostname"] = hn; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
     String res; serializeJson(r, res);
     request->send(200, "application/json", res);
   });
