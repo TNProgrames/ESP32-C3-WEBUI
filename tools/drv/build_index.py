@@ -63,9 +63,24 @@ def main():
             'methods': methods,
         })
 
+    # التطبيقات: apps/<name>.lua + apps/<name>.json (title, desc, driver) تُنسخ بجانب الفهرس
+    apps = []
+    apps_root = os.path.join(ROOT, 'apps')
+    for meta in sorted(glob.glob(os.path.join(apps_root, '*.json'))):
+        name = os.path.splitext(os.path.basename(meta))[0]
+        lua = os.path.join(apps_root, name + '.lua')
+        if not os.path.isfile(lua) or not re.fullmatch(r'[A-Za-z0-9_]{1,24}', name):
+            continue
+        m = json.load(open(meta, encoding='utf-8'))
+        code = open(lua, 'rb').read()
+        with open(os.path.join(args.out_dir, name + '.lua'), 'wb') as f:
+            f.write(code)
+        apps.append({'name': name, 'title': m.get('title', name), 'desc': m.get('desc', ''), 'driver': m.get('driver', ''),
+                     'file': name + '.lua', 'size': len(code), 'sha256': hashlib.sha256(code).hexdigest()})
+
     index_path = os.path.join(args.out_dir, 'index.json')
     with open(index_path, 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'drivers': entries}, f, ensure_ascii=False, indent=2)
+        json.dump({'version': 1, 'drivers': entries, 'apps': apps}, f, ensure_ascii=False, indent=2)
     print(f'Wrote {index_path} ({len(entries)} drivers)')
 
 

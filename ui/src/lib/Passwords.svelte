@@ -1,6 +1,7 @@
 <script>
   import { api } from '../api.js';
   import { t } from '../store.svelte.js';
+  import PassInput from './PassInput.svelte';
 
   let ap = $state(''); let up = $state('');
   let msg = $state(''); let ok = $state(true);
@@ -18,9 +19,9 @@
 <form class="glass" onsubmit={save}>
   <h2>🔑 {t('كلمات المرور')}</h2>
   <label for="a">{t('كلمة مرور admin')}</label>
-  <input id="a" type="text" bind:value={ap} maxlength="32" />
+  <PassInput id="a" bind:value={ap} />
   <label for="u">{t('كلمة مرور user')}</label>
-  <input id="u" type="text" bind:value={up} maxlength="32" />
+  <PassInput id="u" bind:value={up} />
   <div style="margin-top:14px"><button class="btn green">{t('حفظ')}</button></div>
   <div class="msg" class:ok class:err={!ok}>{msg}</div>
 </form>

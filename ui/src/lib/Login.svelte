@@ -1,5 +1,6 @@
 <script>
   import { api, session } from '../api.js';
+  import PassInput from './PassInput.svelte';
   import { t } from '../store.svelte.js';
   let { onLogin } = $props();
 
@@ -65,7 +66,7 @@
     <option value="user">user</option>
   </select>
   <label for="p">{t('كلمة المرور')}</label>
-  <input id="p" type="password" bind:value={password} autocomplete="current-password" />
+  <PassInput id="p" bind:value={password} autocomplete="current-password" />
   <div style="margin-top:14px"><button class="btn" style="width:100%" disabled={busy || !password}>{t('دخول')}</button></div>
   <div class="msg" class:ok class:err={!ok}>{msg}</div>
 

@@ -6,6 +6,12 @@ export const en = {
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Drivers
   'درايفرات': 'Drivers',
+  'متجر التطبيقات': 'App Store', 'التطبيقات': 'Apps', 'التطبيق سكريبت Lua جاهز مع الدرايفر الذي يحتاجه؛ يُثبَّت الاثنان معًا.': 'An app is a ready Lua script plus the driver it needs; both are installed together.',
+  'لا توجد تطبيقات (اضغط جلب)': 'No apps (press Fetch)', 'تم تثبيت التطبيق': 'App installed', 'تم التشغيل': 'Started', 'تعذر التشغيل': 'Could not start', 'تعديل': 'Edit', 'تعذر فتح الملف': 'Could not open file',
+  'وضع تشغيل الدرايفرات': 'Driver execution mode', 'تلقائي (المعالج إن أمكن وإلا المفسّر)': 'Auto (CPU if possible, else interpreter)', 'المفسّر VM (معزول، أبطأ)': 'Interpreter VM (sandboxed, slower)', 'المعالج (سريع، يتطلب ذاكرة تنفيذ)': 'CPU (fast, needs executable memory)',
+  'ذاكرة التنفيذ متاحة على هذا الجهاز': 'Executable memory is available on this device', 'ذاكرة التنفيذ غير متاحة: سيعمل المفسّر': 'Executable memory unavailable: the interpreter will be used', 'تم تغيير الوضع وأُعيد تحميل الدرايفرات': 'Mode changed and drivers reloaded', 'تعذر تغيير الوضع': 'Could not change mode', 'المعالج': 'CPU',
+  'الشبكات المحفوظة (تُجرَّب بالترتيب والأقوى أولاً؛ إن فشلت كلها يدخل وضع الاسترداد)': 'Saved networks (tried strongest first; if all fail the device enters recovery mode)', 'اسم الشبكة': 'Network name', 'كلمة المرور': 'Password', 'إضافة شبكة': 'Add network', 'أعلى': 'Up',
+
   'درايفرات موقّعة تُحمَّل عند الإقلاع. سكريبت Lua يستعملها بـ drv.open(...) ولا يلمس العتاد مباشرة.': 'Signed drivers loaded at boot. Lua scripts use them with drv.open(...) and never touch the hardware directly.',
   'لا توجد درايفرات مثبّتة': 'No drivers installed', 'مفتوح': 'in use', 'رفع ملف درايفر': 'Upload a driver file',
   'تثبيت': 'Install', 'تم التثبيت': 'Installed', 'تعذر التثبيت': 'Install failed', 'حذف الدرايفر': 'Delete driver', 'تم الحذف': 'Deleted',

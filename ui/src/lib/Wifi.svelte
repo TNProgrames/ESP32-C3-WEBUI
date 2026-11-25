@@ -1,25 +1,36 @@
 <script>
   import { api } from '../api.js';
   import { t } from '../store.svelte.js';
+  import PassInput from './PassInput.svelte';
 
-  let f = $state({ mode: 'AP', ssid: '', pass: '', ap_ssid: '', ap_pass: '' });
-  let nets = $state([]);
+  let f = $state({ mode: 'AP', ap_ssid: '', ap_pass: '', nets: [] });
+  const MAX_NETS = 6;
+  let found = $state([]);
   let scanning = $state(false);
   let msg = $state(''); let ok = $state(true);
 
-  $effect(() => { api('/settings/get_wifi').then(r => (f = r)).catch(() => {}); });
+  $effect(() => { api('/settings/get_wifi').then(r => (f = { ...r, nets: r.nets || [] })).catch(() => {}); });
 
   async function scan() {
-    scanning = true; nets = [];
+    scanning = true; found = [];
     for (let i = 0; i < 10; i++) {
       try {
         const r = await api('/settings/scan_wifi');
-        if (Array.isArray(r)) { nets = r; break; }
+        if (Array.isArray(r)) { found = r; break; }
       } catch {}
       await new Promise(r => setTimeout(r, 1500));
     }
     scanning = false;
   }
+
+  function addNet(ssid = '') {
+    if (f.nets.length >= MAX_NETS) return;
+    const i = f.nets.findIndex((n) => n.ssid === ssid);
+    if (ssid && i >= 0) return;
+    f.nets.push({ ssid, pass: '' });
+  }
+  const rmNet = (i) => f.nets.splice(i, 1);
+  const upNet = (i) => { if (i > 0) f.nets.splice(i - 1, 0, ...f.nets.splice(i, 1)); };
 
   async function save(e) {
     e.preventDefault();
@@ -40,25 +51,33 @@
   </select>
 
   {#if f.mode !== 'AP'}
-    <label for="s">{t('اسم الشبكة (STA)')}</label>
-    <div class="row">
-      <input id="s" style="flex:1" bind:value={f.ssid} />
+    <label>{t('الشبكات المحفوظة (تُجرَّب بالترتيب والأقوى أولاً؛ إن فشلت كلها يدخل وضع الاسترداد)')}</label>
+    {#each f.nets as n, i}
+      <div class="net" style="display:block">
+        <div class="row" style="gap:6px">
+          <input style="flex:1;min-width:0" placeholder={t('اسم الشبكة')} bind:value={n.ssid} maxlength="32" />
+          <button type="button" class="btn ghost" title={t('أعلى')} onclick={() => upNet(i)} disabled={i === 0}>⬆</button>
+          <button type="button" class="btn ghost" title={t('حذف')} onclick={() => rmNet(i)}>🗑</button>
+        </div>
+        <div style="margin-top:6px"><PassInput bind:value={n.pass} placeholder={t('كلمة المرور')} /></div>
+      </div>
+    {/each}
+    <div class="row" style="gap:6px;margin-top:6px">
+      <button type="button" class="btn ghost" onclick={() => addNet()} disabled={f.nets.length >= MAX_NETS}>＋ {t('إضافة شبكة')}</button>
       <button type="button" class="btn ghost" onclick={scan} disabled={scanning}>{scanning ? '...' : t('مسح')}</button>
     </div>
-    {#each nets as n}
-      <div class="net" role="button" tabindex="0" onclick={() => (f.ssid = n.ssid)} onkeydown={(e) => e.key === 'Enter' && (f.ssid = n.ssid)}>
+    {#each found as n}
+      <div class="net" role="button" tabindex="0" onclick={() => addNet(n.ssid)} onkeydown={(e) => e.key === 'Enter' && addNet(n.ssid)}>
         <span>{n.ssid} {n.secure ? '🔒' : ''}</span><span style="color:var(--muted)">{n.rssi} dBm</span>
       </div>
     {/each}
-    <label for="p">{t('كلمة مرور الشبكة')}</label>
-    <input id="p" type="password" bind:value={f.pass} />
   {/if}
 
   {#if f.mode !== 'STA'}
     <label for="as">{t('اسم نقطة الوصول (AP)')}</label>
     <input id="as" bind:value={f.ap_ssid} />
     <label for="ap">{t('كلمة مرور نقطة الوصول (8 أحرف على الأقل)')}</label>
-    <input id="ap" type="password" bind:value={f.ap_pass} />
+    <PassInput id="ap" bind:value={f.ap_pass} />
   {/if}
 
   <div style="margin-top:14px"><button class="btn green">{t('حفظ وتطبيق')}</button></div>

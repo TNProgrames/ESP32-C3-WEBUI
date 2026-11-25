@@ -14,13 +14,18 @@ export async function listInstalled() {
 }
 
 // يجلب الفهرس ويتحقق من شكله
-export async function fetchIndex(url) {
+export async function fetchStore(url) {
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const j = await r.json();
   if (j?.version !== 1 || !Array.isArray(j.drivers)) throw new Error('bad index format');
-  return j.drivers.filter((d) => d && typeof d.name === 'string' && typeof d.file === 'string');
+  const okName = (x) => x && typeof x.name === 'string' && /^[A-Za-z0-9_]{1,24}$/.test(x.name) && typeof x.file === 'string';
+  return {
+    drivers: j.drivers.filter(okName),
+    apps: (Array.isArray(j.apps) ? j.apps : []).filter(okName),
+  };
 }
+export async function fetchIndex(url) { return (await fetchStore(url)).drivers; }
 
 // حالة الدرايفر مقابل المثبّت: new | same | upd
 export function compare(entry, installed) {
@@ -59,4 +64,33 @@ export const removeFromDevice = (name) => post('/drv/remove?name=' + encodeURICo
 // تنزيل من المتجر ثم تثبيت
 export async function installFromStore(entry, indexUrl) {
   return installToDevice(await download(entry, indexUrl));
+}
+
+// تطبيق = سكريبت Lua + الدرايفر الذي يستعمله. يُحفظ السكريبت في /scripts/<name>.lua
+export async function installApp(app, drivers, installed, indexUrl) {
+  const drv = drivers.find((d) => d.name === app.driver);
+  if (app.driver && !installed.some((i) => i.name === app.driver)) {
+    if (!drv) return { ok: false, error: 'driver ' + app.driver + ' not in store' };
+    const r = await installFromStore(drv, indexUrl);
+    if (!r.ok) return r;
+  }
+  const rr = await fetch(new URL(app.file, indexUrl).href, { cache: 'no-store' });
+  if (!rr.ok) throw new Error('HTTP ' + rr.status);
+  const code = await rr.text();
+  if (app.sha256 && globalThis.crypto?.subtle) {
+    const h = await sha256Hex(new TextEncoder().encode(code));
+    if (h !== app.sha256) throw new Error('sha256 mismatch');
+  }
+  const body = new URLSearchParams({ content: code });
+  const r = await fetch('/api/save?path=' + encodeURIComponent('/scripts/' + app.name + '.lua'), { method: 'POST', headers: authHeaders(), body });
+  return { ok: r.ok, error: r.ok ? '' : 'HTTP ' + r.status };
+}
+
+export async function getMode() {
+  const r = await fetch('/drv/mode', { headers: authHeaders() });
+  return r.ok ? r.json() : { mode: 'auto', exec: false };
+}
+export async function setMode(mode) {
+  const r = await fetch('/drv/mode?mode=' + mode, { method: 'POST', headers: authHeaders() });
+  return r.ok;
 }

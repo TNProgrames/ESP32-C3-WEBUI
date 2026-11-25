@@ -22,6 +22,7 @@
 // السجل تلمسه مهمتان (خادم الويب والمحرك) فيُحمى بقفل متداخل
 static SemaphoreHandle_t g_mux = nullptr;
 struct Lock { Lock() { if (g_mux) xSemaphoreTakeRecursive(g_mux, portMAX_DELAY); } ~Lock() { if (g_mux) xSemaphoreGiveRecursive(g_mux); } };
+static char g_mode[8] = "auto";
 static DrvEntry g_drv[DRV_MAX_LOADED];
 static bool g_used[DRV_MAX_LOADED];
 
@@ -261,7 +262,8 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
   size_t nsz = (p.memLen + 15) & ~15u;
-  if (heap_caps_get_free_size(MALLOC_CAP_EXEC) >= nsz) {      // ذاكرة قابلة للتنفيذ متاحة ← تنفيذ أصلي سريع
+  if (!strcmp(g_mode, "native") && heap_caps_get_free_size(MALLOC_CAP_EXEC) < nsz) { if (err) *err = "no executable memory (native mode)"; return false; }
+  if (strcmp(g_mode, "vm") && heap_caps_get_free_size(MALLOC_CAP_EXEC) >= nsz) {      // ذاكرة قابلة للتنفيذ متاحة ← تنفيذ أصلي سريع
     uint8_t* nm = (uint8_t*)heap_caps_aligned_alloc(16, nsz, MALLOC_CAP_EXEC | MALLOC_CAP_INTERNAL);
     if (nm) return loadNative(p, b, fileSize, slot, nm, nsz, err);
   }
@@ -327,6 +329,7 @@ static uint8_t* readFile(const String& path, size_t* n) {
 #define LOADING_MARK DRV_DIR "/.loading"
 void drv_boot_load() {
   if (!g_mux) g_mux = xSemaphoreCreateRecursiveMutex();
+  { File mf = LittleFS.open(DRV_DIR "/.mode", "r"); if (mf) { String m = mf.readString(); m.trim(); mf.close(); if (m == "vm" || m == "native" || m == "auto") strcpy(g_mode, m.c_str()); } }
   if (!LittleFS.exists(DRV_DIR)) return;
   if (LittleFS.exists(LOADING_MARK)) {
     File m = LittleFS.open(LOADING_MARK, "r");
@@ -385,7 +388,7 @@ String drv_list_json() {
     JsonObject o = a.add<JsonObject>();
     o["name"] = g_drv[i].name; o["version"] = g_drv[i].version;
     o["size"] = g_drv[i].fileSize; o["mem"] = g_drv[i].memSize; o["users"] = g_drv[i].users;
-    o["info"] = g_drv[i].ops.info;
+    o["info"] = g_drv[i].ops.info; o["mode"] = g_drv[i].native ? "native" : "vm";
     JsonArray ms = o["methods"].to<JsonArray>();
     for (int k = 0; k < g_drv[i].ops.nmethods; k++) {
       JsonObject m = ms.add<JsonObject>(); m["name"] = g_drv[i].ops.methods[k].name; m["sig"] = g_drv[i].ops.methods[k].sig;
@@ -399,4 +402,20 @@ String drv_list_text() {
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i])
     s += String(g_drv[i].name) + " v" + g_drv[i].version + "  file=" + g_drv[i].fileSize + "B ram=" + g_drv[i].memSize + "B users=" + g_drv[i].users + "\n";
   return s.length() ? s : String("no drivers");
+}
+
+const char* drv_get_mode() { return g_mode; }
+bool drv_exec_available() { return heap_caps_get_free_size(MALLOC_CAP_EXEC) > 0; }
+bool drv_set_mode(const char* mode) {
+  if (strcmp(mode, "auto") && strcmp(mode, "vm") && strcmp(mode, "native")) return false;
+  Lock l;
+  strcpy(g_mode, mode);
+  if (!LittleFS.exists(DRV_DIR)) LittleFS.mkdir(DRV_DIR);
+  File mf = LittleFS.open(DRV_DIR "/.mode", "w"); if (mf) { mf.print(mode); mf.close(); }
+  for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i] && g_drv[i].users == 0) {   // أعد تحميل غير المستعمل بالوضع الجديد
+    String path = String(DRV_DIR "/") + g_drv[i].name + ".drv"; size_t len;
+    uint8_t* buf = readFile(path, &len); String e;
+    if (buf) { loadBuf(buf, len, len, &e); free(buf); }
+  }
+  return true;
 }

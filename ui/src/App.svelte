@@ -25,7 +25,7 @@
     { id: 'backup', icon: '💾', label: 'نسخ احتياطي', admin: true },
     { id: 'term', icon: '💻', label: 'الطرفية', admin: true },
     { id: 'lab', icon: '🧪', label: 'مختبر Lua', admin: true },
-    { id: 'drivers', icon: '🔌', label: 'درايفرات', admin: true },
+    { id: 'drivers', icon: '🛒', label: 'متجر التطبيقات', admin: true },
     { id: 'panels', icon: '🪟', label: 'اللوحات', admin: true },
     { id: 'ota', icon: '⬆️', label: 'تحديث', admin: true }
   ];

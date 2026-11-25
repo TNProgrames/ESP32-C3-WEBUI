@@ -7,7 +7,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "64574577203d23e72da6e6f95d451ae6890be8e732d0894bdb6416699b770190",
+      "sha256": "e8879d968263a8dc4e2aaacc193e4ca7fe1d5890213a43627c013acf0ad4660b",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -31,7 +31,7 @@
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "0efc5c9d128196c2bae0aac86db0473fe536a38bae7f9472b656ba9d6c8444c4",
+      "sha256": "c07bc9c282077861ff6a1829d6113bfd8df2e4b945a67edbe9ee162134966071",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -59,7 +59,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "9d866171e11cb23e0567e3c39f0fba158537a8d6ece0d6a3d7b3f97c8e5ab0be",
+      "sha256": "8b992b185a0566b1b058feb3dfc83be2860af892bd7fb0f44d295d21fff9cb85",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -111,7 +111,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "84818d1340e99b47dd4909fce3cdf981f2a6163313226651442eec366fef5d4e",
+      "sha256": "5993b48b034ed08cd04ffb0e113717320aac3681800c9262478c1a8d960346bc",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -140,6 +140,35 @@
           "sig": "b"
         }
       ]
+    }
+  ],
+  "apps": [
+    {
+      "name": "bme_monitor",
+      "title": "مراقب BME280",
+      "desc": "يقرأ الحرارة والضغط والرطوبة ويطبعها في الطرفية كل 5 ثوانٍ.",
+      "driver": "bme280",
+      "file": "bme_monitor.lua",
+      "size": 445,
+      "sha256": "6d8ce7b889bb6152725d35fc167071f9eb8c455f7af5cc4e1ab9b65b6c5ca6a8"
+    },
+    {
+      "name": "lcd_clock",
+      "title": "ساعة على LCD1602",
+      "desc": "تعرض زمن تشغيل الجهاز على شاشة حروف 16×2 (I2C، عنوان 0x27).",
+      "driver": "lcd1602",
+      "file": "lcd_clock.lua",
+      "size": 409,
+      "sha256": "0b36e6411f4ea2307886b5c63b6f362a96efe6875c45a2eb104d9524267174d4"
+    },
+    {
+      "name": "oled_hello",
+      "title": "OLED SSD1306",
+      "desc": "يرسم إطارًا ونصًا وزمن التشغيل على شاشة OLED 128×64.",
+      "driver": "ssd1306",
+      "file": "oled_hello.lua",
+      "size": 418,
+      "sha256": "11315fc81c185311bf1e735d79f75bf227df578a8c091ab7ec060d375a167884"
     }
   ]
 }

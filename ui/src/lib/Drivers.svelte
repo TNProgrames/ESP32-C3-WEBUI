@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
-  import { api, authHeaders } from '../api.js';
-  import { DEFAULT_INDEX, fetchIndex, compare, installToDevice, removeFromDevice, installFromStore } from '../drvstore.js';
+  import { api, apiRaw, authHeaders } from '../api.js';
+  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, getMode, setMode } from '../drvstore.js';
   import { t } from '../store.svelte.js';
   import { lab } from '../lab.svelte.js';
 
@@ -13,7 +13,10 @@
   let busy = $state(false);
   let file = $state(null);
   let storeUrl = $state(localStorage.getItem(STORE_KEY) || DEFAULT_INDEX);
-  let store = $state([]);           // الفهرس المجلوب
+  let store = $state([]);           // درايفرات المتجر
+  let apps = $state([]);            // تطبيقات المتجر (سكريبت Lua + درايفره)
+  let myScripts = $state([]);       // أسماء السكريبتات على الجهاز
+  let mode = $state({ mode: 'auto', exec: false });
   let storeMsg = $state('');
 
   // نموذج الاختبار
@@ -69,13 +72,40 @@
 
   // ---- المتجر: يجلبه المتصفح لا الجهاز ----
   async function loadStore() {
-    storeMsg = ''; store = [];
+    storeMsg = ''; store = []; apps = [];
     try {
       localStorage.setItem(STORE_KEY, storeUrl);
-      store = await fetchIndex(storeUrl);
-      if (!store.length) storeMsg = t('الفهرس فارغ');
+      const r = await fetchStore(storeUrl);
+      store = r.drivers; apps = r.apps;
+      if (!store.length && !apps.length) storeMsg = t('الفهرس فارغ');
     } catch (e) { storeMsg = t('تعذر جلب الفهرس (يلزم اتصال بالإنترنت)') + ': ' + (e.message || ''); }
   }
+  async function loadScripts() { try { const f = await api('/script/files'); myScripts = (f || []).map((x) => x.name); } catch {} }
+  async function loadMode() { try { mode = await getMode(); } catch {} }
+  async function changeMode(m) {
+    busy = true; msg = '';
+    msg = (await setMode(m)) ? t('تم تغيير الوضع وأُعيد تحميل الدرايفرات') : t('تعذر تغيير الوضع');
+    busy = false; await loadMode(); refresh();
+  }
+  async function getApp(a) {
+    busy = true; msg = '';
+    try {
+      const r = await installApp(a, store, list, storeUrl);
+      msg = r.ok ? t('تم تثبيت التطبيق') : t('تعذر التثبيت') + ': ' + r.error;
+    } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
+    busy = false; refresh(); loadScripts();
+  }
+  async function runApp(a) {
+    try { await apiRaw('/script/runfile?name=' + encodeURIComponent(a.name)); msg = t('تم التشغيل'); } catch { msg = t('تعذر التشغيل'); }
+  }
+  async function editApp(a) {
+    try {
+      const r = await fetch('/api/read?path=' + encodeURIComponent('/scripts/' + a.name + '.lua'), { headers: authHeaders() });
+      lab.name = a.name; lab.code = await r.text(); lab.asLib = false; lab.showPage = false; go('lab');
+    } catch { msg = t('تعذر فتح الملف'); }
+  }
+  $effect(() => { untrack(() => { loadStore(); loadScripts(); loadMode(); }); });
+
   async function fromStore(d) {
     busy = true; msg = '';
     try {
@@ -138,7 +168,7 @@
 </script>
 
 <div class="glass">
-  <h2 style="margin-top:0">🔌 {t('درايفرات')}</h2>
+  <h2 style="margin-top:0">🛒 {t('متجر التطبيقات')}</h2>
   <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
     {t('درايفرات موقّعة تُحمَّل عند الإقلاع. سكريبت Lua يستعملها بـ drv.open(...) ولا يلمس العتاد مباشرة.')}
   </p>
@@ -146,7 +176,7 @@
   {#each list as d (d.name)}
     <div style="padding:8px 0;border-bottom:1px solid var(--border)">
       <div class="row" style="justify-content:space-between">
-        <span><b>{d.name}</b> <span style="color:var(--muted);font-size:12px">v{d.version} · {d.size}B · RAM {d.mem}B{d.users ? ' · ' + t('مفتوح') : ''}</span></span>
+        <span><b>{d.name}</b> <span style="color:var(--muted);font-size:12px">v{d.version} · {d.size}B · RAM {d.mem}B · {d.mode === 'native' ? t('المعالج') : 'VM'}{d.users ? ' · ' + t('مفتوح') : ''}</span></span>
         <button class="btn ghost" title={t('حذف')} disabled={busy || d.users > 0} onclick={() => remove(d.name)}>🗑</button>
       </div>
       <div style="color:var(--muted);font-size:12px">{d.info}</div>
@@ -154,6 +184,39 @@
     </div>
   {/each}
   {#if msg}<div style="margin-top:8px;font-size:13px">{msg}</div>{/if}
+</div>
+
+<div class="glass">
+  <h3 style="margin:0 0 8px">📱 {t('التطبيقات')}</h3>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 8px">{t('التطبيق سكريبت Lua جاهز مع الدرايفر الذي يحتاجه؛ يُثبَّت الاثنان معًا.')}</p>
+  {#if !apps.length}<div style="color:var(--muted);font-size:13px">{storeMsg || t('لا توجد تطبيقات (اضغط جلب)')}</div>{/if}
+  {#each apps as a (a.name)}
+    {@const has = myScripts.includes(a.name)}
+    <div class="net" style="display:block;margin-bottom:8px">
+      <div class="row" style="justify-content:space-between">
+        <b>{a.title || a.name}</b>
+        <span style="font-size:11px;color:var(--muted)">🔌 {a.driver}{list.some((d) => d.name === a.driver) ? ' ✓' : ''}</span>
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin:4px 0 8px">{a.desc}</div>
+      <div class="row" style="gap:6px">
+        <button class="btn" disabled={busy} onclick={() => getApp(a)}>{has ? t('تحديث') : t('تثبيت')}</button>
+        {#if has}
+          <button class="btn green" onclick={() => runApp(a)}>▶ {t('تشغيل')}</button>
+          <button class="btn ghost" onclick={() => editApp(a)}>✏ {t('تعديل')}</button>
+        {/if}
+      </div>
+    </div>
+  {/each}
+</div>
+
+<div class="glass">
+  <h3 style="margin:0 0 8px">⚙️ {t('وضع تشغيل الدرايفرات')}</h3>
+  <select value={mode.mode} disabled={busy} onchange={(e) => changeMode(e.currentTarget.value)}>
+    <option value="auto">{t('تلقائي (المعالج إن أمكن وإلا المفسّر)')}</option>
+    <option value="vm">{t('المفسّر VM (معزول، أبطأ)')}</option>
+    <option value="native">{t('المعالج (سريع، يتطلب ذاكرة تنفيذ)')}</option>
+  </select>
+  <div style="color:var(--muted);font-size:12px;margin-top:6px">{mode.exec ? t('ذاكرة التنفيذ متاحة على هذا الجهاز') : t('ذاكرة التنفيذ غير متاحة: سيعمل المفسّر')}</div>
 </div>
 
 <div class="glass">

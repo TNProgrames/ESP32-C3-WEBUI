@@ -28,6 +28,10 @@ int  drv_vm_invoke(DrvEntry* d, int method, uint32_t ctx, const drv_val_t* args,
 void drv_vm_close(DrvEntry* d, uint32_t ctx);
 const drv_api_t* drv_native_api();                                // جدول api الحقيقي للدرايفرات الأصلية (lua_engine.cpp)
 uint32_t drv_host_call(DrvVM* vm, int idx, const uint32_t* a);   // تنفّذه طبقة الربط (lua_engine.cpp): دوال api للدرايفر
+// وضع التنفيذ: "auto" (أصلي إن توفرت ذاكرة تنفيذ وإلا مفسّر) · "vm" (مفسّر دائمًا) · "native" (أصلي فقط). يُحفظ في /drivers/.mode
+const char* drv_get_mode();
+bool drv_set_mode(const char* mode);          // يعيد تحميل الدرايفرات غير المستعملة بالوضع الجديد
+bool drv_exec_available();                    // هل توجد ذاكرة قابلة للتنفيذ؟
 String drv_list_json();
 String drv_list_text();
 bool drv_valid_name(const char* name);

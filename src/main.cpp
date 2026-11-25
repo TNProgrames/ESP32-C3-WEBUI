@@ -197,6 +197,20 @@ bool getJson(const char* filePath, const char* path, char* outValue, size_t outV
   return true;
 }
 
+// --- الشبكات المحفوظة (STA): /wifi_nets.json = [{"ssid":..,"pass":..}] بحد أقصى MAX_NETS ---
+#define NETS_FILE "/wifi_nets.json"
+#define MAX_NETS 6
+static void loadNets(JsonDocument& d) {
+  File f = LittleFS.open(NETS_FILE, "r");
+  if (f) { deserializeJson(d, f); f.close(); }
+  if (!d.is<JsonArray>()) d.to<JsonArray>();
+  if (d.as<JsonArray>().size() == 0) {          // ترقية من الإعداد القديم (شبكة واحدة)
+    char s[33] = "", p[33] = "";
+    getJson("/settings.json", "0_Obj.wifi.ssid", s, sizeof(s)); getJson("/settings.json", "0_Obj.wifi.pass", p, sizeof(p));
+    if (*s) { JsonObject o = d.as<JsonArray>().add<JsonObject>(); o["ssid"] = s; o["pass"] = p; }
+  }
+}
+
 // --- Apply WiFi Settings ---
 
 void applyWiFi() {
@@ -223,16 +237,32 @@ void applyWiFi() {
   }
 
   if (wantSta) {
-    WiFi.begin(wifissid, wifipass);
-
-    // فحص النجاح لمدة 10 ثواني
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-      delay(500); attempts++;
+    // جرّب الشبكات المحفوظة: الظاهرة في المسح أولاً بترتيب قوة الإشارة. إن لم تنجح أي واحدة → وضع الاسترداد
+    JsonDocument nd; loadNets(nd);
+    JsonArray arr = nd.as<JsonArray>();
+    int cnt = arr.size(); if (cnt > MAX_NETS) cnt = MAX_NETS;
+    int order[MAX_NETS], rssi[MAX_NETS]; int seen = 0;
+    int found = WiFi.scanNetworks(false, true);
+    for (int i = 0; i < cnt; i++) {
+      order[i] = i; rssi[i] = -999;
+      const char* ss = arr[i]["ssid"] | "";
+      for (int k = 0; k < found; k++) if (WiFi.SSID(k) == ss) { rssi[i] = WiFi.RSSI(k); seen++; break; }
     }
-
+    WiFi.scanDelete();
+    for (int i = 1; i < cnt; i++)                       // ترتيب إدراج بسيط بحسب rssi تنازلياً
+      for (int j = i; j > 0 && rssi[order[j]] > rssi[order[j - 1]]; j--) { int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t; }
+    for (int i = 0; i < cnt && WiFi.status() != WL_CONNECTED; i++) {
+      int k = order[i];
+      if (seen > 0 && rssi[k] == -999) continue;         // غير ظاهرة: تخطَّها إن ظهرت غيرها
+      const char* ss = arr[k]["ssid"] | ""; const char* pw = arr[k]["pass"] | "";
+      if (!*ss) continue;
+      logPrintf("WiFi: trying %s\n", ss);
+      WiFi.begin(ss, pw);
+      for (int a = 0; a < 20 && WiFi.status() != WL_CONNECTED; a++) delay(500);   // حتى 10 ثوانٍ لكل شبكة
+      if (WiFi.status() != WL_CONNECTED) WiFi.disconnect();
+    }
     if (WiFi.status() != WL_CONNECTED && !wantAp) {
-      logPrintf("STA failed, reverting to AP safety mode\n");
+      logPrintf("STA failed on all saved networks, reverting to recovery mode\n");
       WiFi.mode(WIFI_AP);
       WiFi.softAP("RECOVERY_MODE", "12345678");
     }
@@ -643,6 +673,17 @@ void setupServerWeb() {
       JsonDocument doc;
       if (deserializeJson(doc, data, len)) { request->send(400); return; }
       if (type == 0) { // WiFi
+        if (doc["nets"].is<JsonArray>()) {          // قائمة الشبكات المحفوظة (الأولى تُنسخ للحقول القديمة)
+          JsonDocument nd; JsonArray out = nd.to<JsonArray>();
+          for (JsonObject n : doc["nets"].as<JsonArray>()) {
+            const char* ss = n["ssid"] | ""; const char* pw = n["pass"] | "";
+            if (!*ss || strlen(ss) > 32 || strlen(pw) > 63 || (int)out.size() >= MAX_NETS) continue;
+            JsonObject o = out.add<JsonObject>(); o["ssid"] = ss; o["pass"] = pw;
+          }
+          File nf = LittleFS.open(NETS_FILE, "w"); if (nf) { serializeJson(nd, nf); nf.close(); }
+          doc["ssid"] = out.size() ? (const char*)(out[0]["ssid"] | "") : "";
+          doc["pass"] = out.size() ? (const char*)(out[0]["pass"] | "") : "";
+        }
         updateOrCreateJson("/settings.json", "0_Obj.wifi.mode", doc["mode"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ssid", doc["ssid"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]);
@@ -717,13 +758,13 @@ void setupServerWeb() {
   
   server.on("/settings/get_wifi", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAdminToken(request)) { request->send(401); return; }
-    char m[33] = "", s[33] = "", p[33] = "", ap_s[33] = "", ap_p[33] = "", res[256];
+    char m[33] = "", ap_s[33] = "", ap_p[33] = "";
     getJson("/settings.json", "0_Obj.wifi.mode", m, 33);
-    getJson("/settings.json", "0_Obj.wifi.ssid", s, 33);
-    getJson("/settings.json", "0_Obj.wifi.pass", p, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_ssid", ap_s, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_pass", ap_p, 33);
-    snprintf(res, sizeof(res), "{\"mode\":\"%s\",\"ssid\":\"%s\",\"pass\":\"%s\",\"ap_ssid\":\"%s\",\"ap_pass\":\"%s\"}", m, s, p, ap_s, ap_p);
+    JsonDocument nd; loadNets(nd);
+    JsonDocument r; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
+    String res; serializeJson(r, res);
     request->send(200, "application/json", res);
   });
 
@@ -928,6 +969,16 @@ void setupServerWeb() {
   });
 
   // ---- الدرايفرات الموقّعة (.drv) ----
+  server.on("/drv/mode", HTTP_GET, [](AsyncWebServerRequest* r) {
+    if (!isAnyToken(r)) { r->send(401); return; }
+    r->send(200, "application/json", String("{\"mode\":\"") + drv_get_mode() + "\",\"exec\":" + (drv_exec_available() ? "true" : "false") + "}");
+  });
+  server.on("/drv/mode", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (!isAdminToken(r)) { r->send(401); return; }
+    const AsyncWebParameter* p = r->hasParam("mode") ? r->getParam("mode") : nullptr;
+    bool ok = p && drv_set_mode(p->value().c_str());
+    r->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"bad mode\"}");
+  });
   server.on("/drv/list", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
     request->send(200, "application/json", drv_list_json());
