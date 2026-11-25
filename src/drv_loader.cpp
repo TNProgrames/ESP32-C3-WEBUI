@@ -1,10 +1,12 @@
 #include "drv_loader.h"
 #include "drv_pubkey.h"
 #include <LittleFS.h>
-#include <mbedtls/sha256.h>
+#include "sha_util.h"
+#if !(defined(MBEDTLS_VERSION_MAJOR) && MBEDTLS_VERSION_MAJOR >= 4)
 #include <mbedtls/ecdsa.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/bignum.h>
+#endif
 #include <esp_heap_caps.h>
 #include <ArduinoJson.h>
 #include <string.h>
@@ -36,7 +38,22 @@ struct Parsed { uint32_t entry, imgLen, memLen, nrel; char name[17]; char ver[9]
 
 static bool verifySig(const uint8_t* buf, size_t len) {
   uint8_t hash[32];
-  if (mbedtls_sha256(buf, len - SIG, hash, 0) != 0) return false;
+  if (!sha256_once(buf, len - SIG, hash)) return false;
+#if defined(MBEDTLS_VERSION_MAJOR) && MBEDTLS_VERSION_MAJOR >= 4
+  if (psa_crypto_init() != PSA_SUCCESS) return false;
+  psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_type(&attr, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
+  psa_set_key_bits(&attr, 256);
+  psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_VERIFY_HASH);
+  psa_set_key_algorithm(&attr, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+  psa_key_id_t keyId = 0;
+  psa_status_t st = psa_import_key(&attr, DRV_PUBKEY, sizeof(DRV_PUBKEY), &keyId);
+  psa_reset_key_attributes(&attr);
+  if (st != PSA_SUCCESS) return false;
+  bool ok = psa_verify_hash(keyId, PSA_ALG_ECDSA(PSA_ALG_SHA_256), hash, sizeof(hash), buf + len - SIG, SIG) == PSA_SUCCESS;
+  psa_destroy_key(keyId);
+  return ok;
+#else
   mbedtls_ecp_group grp; mbedtls_ecp_point Q; mbedtls_mpi r, s;
   mbedtls_ecp_group_init(&grp); mbedtls_ecp_point_init(&Q); mbedtls_mpi_init(&r); mbedtls_mpi_init(&s);
   bool ok = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1) == 0
@@ -46,6 +63,7 @@ static bool verifySig(const uint8_t* buf, size_t len) {
          && mbedtls_ecdsa_verify(&grp, hash, 32, &Q, &r, &s) == 0;
   mbedtls_ecp_group_free(&grp); mbedtls_ecp_point_free(&Q); mbedtls_mpi_free(&r); mbedtls_mpi_free(&s);
   return ok;
+#endif
 }
 
 // تحقق كامل: بنية ثم توقيع ثم إزاحات reloc
