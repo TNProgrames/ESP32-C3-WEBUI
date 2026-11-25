@@ -36,6 +36,7 @@ char Admin_Token[33] = "";
 char User_Token[33] = "";
 // --- WiFi is Working 
 bool wifiIsWorking = false;
+volatile bool mdnsApplyPending = false;  // إعادة تشغيل mDNS داخل loop() لا داخل callback
 volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
 
 // --- OTA State ---
@@ -220,6 +221,12 @@ static void cleanHost(char* h) {
   while (n > 0 && o[n - 1] == '-') n--;
   o[n] = 0; strcpy(h, n ? o : "esp32");
 }
+// الاسم المحلي = إعداد «المضيف المحلي» في تبويب الاتصال (مثل esp32.local)
+static void loadHost() {
+  char h[33] = "esp32.local"; getJson("/settings.json", "0_Obj.localhost", h, sizeof h);
+  char* dot = strchr(h, '.'); if (dot) *dot = 0;          // نحتفظ بالجزء قبل أول نقطة
+  cleanHost(h); strcpy(hostname_, h);
+}
 static void startMdns() {
   MDNS.end();
   if (MDNS.begin(hostname_)) { MDNS.addService("http", "tcp", 80); logPrintf("mDNS: http://%s.local\n", hostname_); }
@@ -240,7 +247,7 @@ void applyWiFi() {
   getJson("/settings.json", "0_Obj.wifi.pass", wifipass, sizeof(wifipass));
   getJson("/settings.json", "0_Obj.wifi.ap_ssid", apwifissid, sizeof(apwifissid));
   getJson("/settings.json", "0_Obj.wifi.ap_pass", apwifipass, sizeof(apwifipass));
-  strcpy(hostname_, "esp32"); getJson("/settings.json", "0_Obj.wifi.hostname", hostname_, sizeof(hostname_)); cleanHost(hostname_);
+  loadHost();
 
   bool wantSta = (strcmp(wifimode, "STA") == 0 || strcmp(wifimode, "AP_STA") == 0);
   bool wantAp  = !wantSta || strcmp(wifimode, "AP_STA") == 0; // أي قيمة غير معروفة = AP
@@ -707,10 +714,10 @@ void setupServerWeb() {
         updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", doc["ap_ssid"]);
         updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"]);
-        if (doc["hostname"].is<const char*>()) { char hb[33]; strlcpy(hb, doc["hostname"] | "esp32", sizeof hb); cleanHost(hb); doc["hostname"] = hb; updateOrCreateJson("/settings.json", "0_Obj.wifi.hostname", doc["hostname"]); }
         wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
       } else if (type == 1) { // Comm
         updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
+        mdnsApplyPending = true;   // يسري فورًا بلا إعادة تشغيل
         updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"]);
       } else if (type == 2) { // Pin
         updateOrCreateJson("/settings.json", "0_Obj.pinreset", doc["pin"]);
@@ -781,9 +788,8 @@ void setupServerWeb() {
     getJson("/settings.json", "0_Obj.wifi.mode", m, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_ssid", ap_s, 33);
     getJson("/settings.json", "0_Obj.wifi.ap_pass", ap_p, 33);
-    char hn[33] = "esp32"; getJson("/settings.json", "0_Obj.wifi.hostname", hn, 33); cleanHost(hn);
     JsonDocument nd; loadNets(nd);
-    JsonDocument r; r["hostname"] = hn; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
+    JsonDocument r; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
     String res; serializeJson(r, res);
     request->send(200, "application/json", res);
   });
@@ -1114,6 +1120,7 @@ void setup() {
 }
 
 void loop() {
+  if (mdnsApplyPending) { mdnsApplyPending = false; loadHost(); startMdns(); }
   if (wifiApplyPending) {
     wifiApplyPending = false;
     delay(300); // أمهل الرد 200 وقتاً ليصل قبل إعادة ضبط الواي فاي
