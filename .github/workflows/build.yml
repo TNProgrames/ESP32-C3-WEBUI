@@ -75,26 +75,57 @@ jobs:
         run: |
           if [ -d data ]; then pio run -t buildfs; fi
 
-      - name: Collect artifacts
+      - name: Package
         run: |
           VER="${GITHUB_REF_NAME//\//-}"
           B=.pio/build/esp32-c3-devkitm-1
-          mkdir -p dist
-          cp $B/firmware.bin   dist/firmware-$VER.bin
-          cp $B/bootloader.bin dist/bootloader-$VER.bin
-          cp $B/partitions.bin dist/partitions-$VER.bin
-          [ -f $B/littlefs.bin ] && cp $B/littlefs.bin dist/littlefs-$VER.bin || true
-          cp dist-drivers/*.drv dist-drivers/*.lua dist-drivers/*.html dist-drivers/index.json dist/
-          ls -l dist
+          rm -rf pkg && mkdir -p pkg/firmware pkg/drivers pkg/apps pkg/tools release art
+
+          # 1) الفيرموير: ملفات الفلاش
+          cp $B/firmware.bin $B/bootloader.bin $B/partitions.bin pkg/firmware/
+          [ -f $B/littlefs.bin ] && cp $B/littlefs.bin pkg/firmware/ || true
+          (cd pkg/firmware && zip -qr ../../release/firmware-$VER.zip .)
+
+          # 2) الدرايفرات الموقّعة + الفهرس
+          cp dist-drivers/*.drv dist-drivers/index.json pkg/drivers/
+          (cd pkg/drivers && zip -qr ../../release/drivers-$VER.zip .)
+
+          # 3) التطبيقات: سكريبت Lua + صفحة HTML + وصف
+          cp dist-drivers/*.lua dist-drivers/*.html pkg/apps/ 2>/dev/null || true
+          cp apps/*.json pkg/apps/
+          (cd pkg/apps && zip -qr ../../release/apps-$VER.zip .)
+
+          # 4) أدوات التطوير: بناء/توقيع/اختبار الدرايفرات + مصادرها + الوثائق
+          mkdir -p pkg/tools/src pkg/tools/docs
+          cp -r tools/drv pkg/tools/drv
+          cp -r drivers pkg/tools/drivers && rm -rf pkg/tools/drivers/build
+          cp src/drv_api.h src/drv_vm.h src/drv_vm.cpp pkg/tools/src/
+          cp docs/ARCHITECTURE.md pkg/tools/docs/ 2>/dev/null || true
+          cp docs/scripting/drivers.md docs/scripting/ui.md pkg/tools/docs/
+          cp -r apps pkg/tools/apps
+          find pkg/tools -name __pycache__ -prune -exec rm -rf {} +
+          (cd pkg/tools && zip -qr ../../release/tools-$VER.zip .)
+
+          # 5) الكود المصدري الكامل
+          git archive --format=zip --prefix=esp32-c3-webui-$VER/ -o release/source-$VER.zip HEAD
+
+          # ملف .bin وحده للتحديث عن بُعد (OTA) من الواجهة
+          cp $B/firmware.bin release/firmware-$VER.bin
+          ls -l release
+
+          # ما يخرج من الـAction (artifact "firmware"): ملفان فقط — الفيرموير، وكل ما عداه (درايفرات وتطبيقات وأدوات)
+          cp release/firmware-$VER.zip art/
+          (cd pkg && zip -qr ../art/other-$VER.zip drivers apps tools)
+          ls -l art
 
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: dist/*
+          path: art/*
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: release/*
           generate_release_notes: true
