@@ -71,6 +71,8 @@ export async function installFromStore(entry, indexUrl) {
 export const appDrivers = (app) => (Array.isArray(app.drivers) && app.drivers.length ? app.drivers : app.driver ? [app.driver] : []);
 
 async function save(path, content) {
+  const dir = path.slice(0, path.lastIndexOf('/'));          // LittleFS لا ينشئ المجلد تلقائيًا: أنشئه (الخطأ إن وُجد يُتجاهل)
+  if (dir) await fetch('/api/mkdir?path=' + encodeURIComponent(dir), { method: 'POST', headers: authHeaders() }).catch(() => {});
   const r = await fetch('/api/save?path=' + encodeURIComponent(path), {
     method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ content }),
@@ -97,7 +99,6 @@ export async function installApp(app, drivers, installed, indexUrl) {
   const html = app.page_file ? await fetchText(indexUrl, app.page_file, app.page_sha256) : '';
   await save('/scripts/' + app.name + '.lua', code);
   if (html) {
-    await fetch('/api/mkdir?path=/ui', { method: 'POST', headers: authHeaders() });
     await save('/ui/' + app.name + '.html', html);
     await save('/scripts/' + app.name + '.page', '/ui/' + app.name + '.html');
   }

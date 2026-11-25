@@ -580,6 +580,8 @@ void EmSetupAPI() {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String path;
         if (!getPathParam(request, "path", path) || !request->hasParam("content", true)) { request->send(400); return; }
+        for (int i = 1; i < (int)path.length(); i++)      // أنشئ المجلدات الأب إن لم تكن موجودة
+          if (path[i] == '/') { String d = path.substring(0, i); if (!LittleFS.exists(d)) LittleFS.mkdir(d); }
         File f = LittleFS.open(path, "w");
         if (!f) { request->send(500); return; }
         f.print(request->getParam("content", true)->value());
