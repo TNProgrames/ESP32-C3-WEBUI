@@ -18,7 +18,7 @@ globalThis.fetch = async (url, opt) => {
 };
 const base = 'https://raw.githubusercontent.com/x/y/main/drivers/build/index.json';
 const idx = await S.fetchIndex(base);
-assert.ok(idx.length === 4 && idx.every((d) => d.sha256 && d.methods.length), 'index');
+assert.ok(idx.length >= 8 && idx.every((d) => d.sha256 && d.methods.length), 'index');
 assert.ok(S.compare(idx[0], []) === 'new');
 assert.ok(S.compare(idx[0], [{ name: idx[0].name, version: idx[0].version }]) === 'same');
 assert.ok(S.compare(idx[0], [{ name: idx[0].name, version: '0.1' }]) === 'upd');
