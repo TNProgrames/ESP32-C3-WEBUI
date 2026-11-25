@@ -1310,21 +1310,42 @@ static int apiGpioRead(uint8_t pin) {
 static const char* drvErrName(int c) {
   switch (c) { case 2: case 3: case 5: case 7: case 8: return i2cErr(c); case 9: return "pin_unavailable"; case 10: return "spi_not_started"; default: return "device_error"; }
 }
-static const drv_api_t DRV_API = { DRV_API_VERSION, apiLog, apiAlloc, apiRelease, apiMillis, apiDelayMs, apiDelayUs,
-                                   apiI2cWrite, apiI2cRead, apiI2cWriteRead,
-                                   apiSpiWrite, apiSpiTransfer, apiGpioMode, apiGpioWrite, apiGpioRead };
+// يُستدعى من المفسّر حين ينادي الدرايفر دالة من api (الأرقام = ترتيب الحقول في drv_api_t بعد version).
+// كل مؤشر من الدرايفر يُترجَم ويُفحص حدوده أولًا؛ أي عنوان خارج ذاكرته يُرفض بـDRV_E_ARGS.
+uint32_t drv_host_call(DrvVM* v, int idx, const uint32_t* a) {
+  const uint32_t BAD = (uint32_t)DRV_E_ARGS;
+  switch (idx) {
+    case 1: { const char* m = drv_vm_str(v, a[0], 200); apiLog(m ? m : ""); return 0; }
+    case 2: return drv_vm_alloc(v, a[0]);
+    case 3: drv_vm_free(v, a[0]); return 0;
+    case 4: return apiMillis();
+    case 5: apiDelayMs(a[0]); return 0;
+    case 6: apiDelayUs(a[0]); return 0;
+    case 7: { const uint8_t* d = drv_vm_ptr(v, a[1], a[2]); return d ? (uint32_t)apiI2cWrite((uint8_t)a[0], d, a[2]) : BAD; }
+    case 8: { uint8_t* d = drv_vm_ptr(v, a[1], a[2]); return d ? (uint32_t)apiI2cRead((uint8_t)a[0], d, a[2]) : BAD; }
+    case 9: { const uint8_t* tx = drv_vm_ptr(v, a[1], a[2]); uint8_t* rx = drv_vm_ptr(v, a[3], a[4]);
+              return tx && rx ? (uint32_t)apiI2cWriteRead((uint8_t)a[0], tx, a[2], rx, a[4]) : BAD; }
+    case 10: { const uint8_t* d = drv_vm_ptr(v, a[3], a[4]); return d ? (uint32_t)apiSpiWrite((uint8_t)a[0], a[1], (uint8_t)a[2], d, a[4]) : BAD; }
+    case 11: { const uint8_t* tx = drv_vm_ptr(v, a[3], a[5]); uint8_t* rx = drv_vm_ptr(v, a[4], a[5]);
+               return tx && rx ? (uint32_t)apiSpiTransfer((uint8_t)a[0], a[1], (uint8_t)a[2], tx, rx, a[5]) : BAD; }
+    case 12: return (uint32_t)apiGpioMode((uint8_t)a[0], (uint8_t)a[1]);
+    case 13: return (uint32_t)apiGpioWrite((uint8_t)a[0], (uint8_t)a[1]);
+    case 14: return (uint32_t)apiGpioRead((uint8_t)a[0]);
+  }
+  return BAD;
+}
 
-struct DrvHandle { DrvEntry* e; void* ctx; };
+struct DrvHandle { DrvEntry* e; uint32_t ctx; };
 
 static void drvClose(lua_State* L, DrvHandle* h) {
   if (!h->e) return;
   Script* s = me(L);
   g_drvScript = s; g_drvErr = 0;
-  h->e->ops->close(h->ctx);
+  drv_vm_close(h->e, h->ctx);
   g_drvScript = nullptr;
   drv_release(h->e);
   if (s->drvOpen > 0) s->drvOpen--;
-  h->e = nullptr; h->ctx = nullptr;
+  h->e = nullptr; h->ctx = 0;
 }
 
 static int l_drv_open(lua_State* L) {
@@ -1352,11 +1373,11 @@ static int l_drv_open(lua_State* L) {
   }
   DrvEntry* e = drv_acquire(name);        // يحجز الدرايفر فلا يُحذف أو يُستبدل أثناء الاستعمال
   if (!e) return failResult(L, "driver_not_installed");
-  void* ctx = nullptr; int rc;
+  uint32_t ctx = 0; int rc;
   {
     IoTimer t(s);
     g_drvScript = s; g_drvErr = 0;
-    rc = e->ops->open(&ctx, &DRV_API, cfg, nc);
+    rc = drv_vm_open(e, cfg, nc, &ctx);
     g_drvScript = nullptr;
   }
   if (rc) {
@@ -1377,7 +1398,8 @@ static int l_drv_call(lua_State* L) {
   DrvHandle* h = (DrvHandle*)luaL_checkudata(L, 1, DRV_MT);
   if (!h->e) return failResult(L, "closed");
   Script* s = me(L);
-  const drv_method_t& m = h->e->ops->methods[lua_tointeger(L, lua_upvalueindex(1))];
+  const int mi = (int)lua_tointeger(L, lua_upvalueindex(1));
+  const DrvMethodInfo& m = h->e->ops.methods[mi];
   int nargs = lua_gettop(L) - 1, total = (int)strlen(m.sig), need = 0;
   for (const char* c = m.sig; *c; c++) if (islower((unsigned char)*c)) need++;
   if (nargs < need || nargs > total) return failResult(L, "bad_args");
@@ -1398,7 +1420,7 @@ static int l_drv_call(lua_State* L) {
   {
     IoTimer t(s);
     g_drvScript = s; g_drvErr = 0;
-    rc = m.fn(h->ctx, a, nargs, r, &nr);
+    rc = drv_vm_invoke(h->e, mi, h->ctx, a, nargs, r, &nr);
     g_drvScript = nullptr;
   }
   if (rc == DRV_E_ARGS) return failResult(L, "bad_args");
@@ -1428,7 +1450,7 @@ static int l_drv_index(lua_State* L) {
   lua_getfield(L, -1, key);
   if (!lua_isnil(L, -1)) return 1;
   lua_pop(L, 1);
-  const drv_ops_t* o = h->e->ops;
+  const DrvOps* o = &h->e->ops;
   for (int i = 0; i < o->nmethods; i++) if (!strcmp(o->methods[i].name, key)) {
     lua_pushinteger(L, i);
     lua_pushcclosure(L, l_drv_call, 1);

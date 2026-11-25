@@ -1,14 +1,12 @@
 #include "drv_loader.h"
 #include "drv_pubkey.h"
 #include <LittleFS.h>
-#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <mbedtls/ecdsa.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/bignum.h>
 #include <ArduinoJson.h>
 #include <string.h>
-#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -89,55 +87,98 @@ int drv_snapshot(DrvBrief* out, int max) {
   for (int i = 0; i < DRV_MAX_LOADED && n < max; i++) if (g_used[i]) {
     strncpy(out[n].name, g_drv[i].name, 15); out[n].name[15] = 0;
     strncpy(out[n].version, g_drv[i].version, 7); out[n].version[7] = 0;
-    strncpy(out[n].info, g_drv[i].ops->info ? g_drv[i].ops->info : "", 47); out[n].info[47] = 0;
+    strncpy(out[n].info, g_drv[i].ops.info, 47); out[n].info[47] = 0;
     n++;
   }
   return n;
 }
 
 
-// مسار تشخيص بلا منفذ تسلسلي: آخر مرحلة وصل إليها التحميل تُحفظ في RTC وتبقى بعد انهيار الجهاز
-static RTC_NOINIT_ATTR uint32_t g_stageMagic;
-static RTC_NOINIT_ATTR uint32_t g_stage;
-static RTC_NOINIT_ATTR uint32_t g_stageAddr;
-static String g_prevReport;
-static void stage(uint32_t n, uint32_t addr = 0) { g_stageMagic = 0xD15C0DE5; g_stage = n; g_stageAddr = addr; }
-static const char* stageName(uint32_t n) {
-  switch (n) { case 1: return "verified"; case 2: return "pool-alloc"; case 3: return "copy-image"; case 4: return "relocate";
-               case 5: return "before-entry-call"; case 6: return "after-entry-call"; case 7: return "ops-validated"; default: return "none"; }
-}
-
-// ESP32-C3 + Arduino: لا كومة قابلة للتنفيذ (free=0). نحجز مجمّعًا ثابتًا في IRAM (قابل للتنفيذ والكتابة بنفس العنوان)
-// ونقسمه إلى كتل 1KB. الكلفة: DRV_POOL_KB من الذاكرة الداخلية دائمًا.
-#define DRV_POOL_KB 20
-#define DRV_BLK 1024
-static uint8_t g_pool[DRV_POOL_KB * DRV_BLK] __attribute__((section(".iram1.drvpool"), aligned(16)));
-static uint8_t g_blkLen[DRV_POOL_KB];     // طول المقطع بالكتل عند أول كتلة (0 = حرّة/تابعة)
-static uint8_t g_blkUsed[DRV_POOL_KB];
-static uint8_t* execAlloc(size_t n) {
-  size_t need = (n + DRV_BLK - 1) / DRV_BLK;
-  for (size_t i = 0; i + need <= DRV_POOL_KB; i++) {
-    size_t k = 0; while (k < need && !g_blkUsed[i + k]) k++;
-    if (k == need) {
-      for (k = 0; k < need; k++) g_blkUsed[i + k] = 1;
-      g_blkLen[i] = (uint8_t)need;
-      return g_pool + i * DRV_BLK;
-    }
-  }
-  return nullptr;
-}
-static void execFree(uint8_t* p) {
-  size_t i = (size_t)(p - g_pool) / DRV_BLK;
-  for (size_t k = 0; k < g_blkLen[i]; k++) g_blkUsed[i + k] = 0;
-  g_blkLen[i] = 0;
-}
-
 static void unloadSlot(int i) {
-  if (g_drv[i].mem) execFree(g_drv[i].mem);
+  free(g_drv[i].mem);
   memset(&g_drv[i], 0, sizeof(DrvEntry)); g_used[i] = false;
 }
 
-// ينسخ الصورة إلى ذاكرة قابلة للتنفيذ ويطبّق إعادة التموضع ويستدعي drv_entry
+// ---------- تمرير المعاملات إلى ذاكرة الدرايفر (التخطيط 32-بت ثابت: انظر drv_api.h) ----------
+// منطقة scratch: [0..64) معاملات · [64..128) نتائج · [128] nret · [132] ctx · [136..) نصوص
+#define SC_ARGS 0
+#define SC_RET 64
+#define SC_NRET 128
+#define SC_CTX 132
+#define SC_STR 136
+static inline void put32(uint8_t* p, uint32_t v) { memcpy(p, &v, 4); }
+static inline uint32_t get32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
+
+struct Marshal {
+  DrvVM* vm; uint8_t* S; uint32_t strOff;
+  explicit Marshal(DrvVM* v) : vm(v), S(v->mem + v->scrOff), strOff(SC_STR) { memset(S, 0, DRV_VM_SCRATCH); }
+  uint32_t guest(uint32_t off) const { return DRV_GBASE + vm->scrOff + off; }
+  // يكتب drv_val_t (8 بايت) عند off
+  bool val(uint32_t off, const drv_val_t& v) {
+    uint32_t w = 0;
+    S[off] = v.type; S[off + 1] = 0;
+    uint16_t len = 0;
+    if (v.type == DRV_STR || v.type == DRV_BLOB) {
+      len = v.len;
+      if (strOff + len + 1 > DRV_VM_SCRATCH) return false;
+      memcpy(S + strOff, v.v.p, len); S[strOff + len] = 0;
+      w = guest(strOff); strOff += (len + 4) & ~3u;
+    } else if (v.type == DRV_INT || v.type == DRV_BOOL) w = (uint32_t)v.v.i;
+    memcpy(S + off + 2, &len, 2); put32(S + off + 4, w);
+    return true;
+  }
+};
+
+static bool vmRun(DrvEntry* d, uint32_t fn, const uint32_t* a, int n, uint32_t* r) {
+  int f = drv_vm_call(&d->vm, fn, a, n, r);
+  if (f) { Serial.printf("[drv] %s: vm fault %d at pc=0x%x\n", d->name, f, (unsigned)d->vm.pc); return false; }
+  return true;
+}
+
+int drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx) {
+  Marshal m(&d->vm);
+  uint32_t kvOff = m.strOff; m.strOff += 12 * (uint32_t)ncfg;
+  for (int i = 0; i < ncfg; i++) {
+    size_t kl = strlen(cfg[i].key);
+    if (m.strOff + kl + 1 > DRV_VM_SCRATCH) return DRV_E_ARGS;
+    memcpy(m.S + m.strOff, cfg[i].key, kl + 1);
+    put32(m.S + kvOff + 12 * i, m.guest(m.strOff)); m.strOff += (kl + 4) & ~3u;
+    if (!m.val(kvOff + 12 * i + 4, cfg[i].val)) return DRV_E_ARGS;
+  }
+  uint32_t a[4] = { m.guest(SC_CTX), drv_vm_api_addr(&d->vm), m.guest(kvOff), (uint32_t)ncfg }, rc = 0;
+  if (!vmRun(d, d->ops.open, a, 4, &rc)) return DRV_E_FAULT;
+  *ctx = get32(m.S + SC_CTX);
+  return (int)rc;
+}
+
+int drv_vm_invoke(DrvEntry* d, int mi, uint32_t ctx, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret) {
+  Marshal m(&d->vm);
+  for (int i = 0; i < nargs; i++) if (!m.val(SC_ARGS + 8 * i, args[i])) return DRV_E_ARGS;
+  uint32_t a[5] = { ctx, m.guest(SC_ARGS), (uint32_t)nargs, m.guest(SC_RET), m.guest(SC_NRET) }, rc = 0;
+  if (!vmRun(d, d->ops.methods[mi].fn, a, 5, &rc)) return DRV_E_FAULT;
+  int nr = (int)get32(m.S + SC_NRET);
+  if (nr < 0) nr = 0; if (nr > DRV_MAX_ARGS) nr = DRV_MAX_ARGS;
+  *nret = nr;
+  for (int i = 0; i < nr; i++) {
+    const uint8_t* e = m.S + SC_RET + 8 * i;
+    drv_val_t& v = ret[i]; memset(&v, 0, sizeof v);
+    v.type = e[0]; memcpy(&v.len, e + 2, 2);
+    uint32_t w = get32(e + 4);
+    if (v.type == DRV_STR || v.type == DRV_BLOB) {
+      const uint8_t* p = drv_vm_ptr(&d->vm, w, v.len);     // مؤشر داخل ذاكرة الدرايفر، صالح حتى الاستدعاء التالي
+      if (!p) v.type = DRV_NIL; else v.v.p = p;
+    } else if (v.type == DRV_INT || v.type == DRV_BOOL) v.v.i = (int32_t)w;
+    else v.type = DRV_NIL;
+  }
+  return (int)rc;
+}
+
+void drv_vm_close(DrvEntry* d, uint32_t ctx) {
+  uint32_t a[1] = { ctx }, r;
+  vmRun(d, d->ops.close, a, 1, &r);
+}
+
+// ينسخ الصورة إلى ذاكرة الدرايفر الخاصة ويطبّق إعادة التموضع ويشغّل drv_entry داخل المفسّر
 static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) {
   Parsed p;
   if (!parse(b, len, &p, err)) return false;
@@ -149,33 +190,40 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
     for (int i = 0; i < DRV_MAX_LOADED; i++) if (!g_used[i]) { slot = i; break; }
     if (slot < 0) { if (err) *err = "too many drivers"; return false; }
   }
-  stage(1);
-  size_t sz = (p.memLen + 15) & ~15u;
-  uint8_t* mem = execAlloc(sz);
-  if (!mem) { if (err) *err = "no executable memory"; return false; }
-  stage(2, (uint32_t)(uintptr_t)mem);
-  // الكتابة عبر ناقل البيانات إن وقع المجمّع في نافذة IRAM (أضمن من الكتابة عبر ناقل التعليمات)
-  uint32_t ia = (uint32_t)(uintptr_t)mem;
-  uint8_t* wr = (ia >= 0x40380000u && ia < 0x403E0000u) ? (uint8_t*)(uintptr_t)(ia - 0x700000u) : mem;
-  stage(3, (uint32_t)(uintptr_t)wr);
-  memcpy(wr, b + HDR, p.imgLen);
-  if (p.memLen > p.imgLen) memset(wr + p.imgLen, 0, p.memLen - p.imgLen);
+  size_t asz = drv_vm_arena_size(p.memLen);
+  uint8_t* mem = (uint8_t*)calloc(1, asz);
+  if (!mem) { if (err) *err = "no memory"; return false; }
+  memcpy(mem, b + HDR, p.imgLen);
   const uint8_t* rel = b + HDR + p.imgLen;
-  uint32_t base = (uint32_t)(uintptr_t)mem;
-  for (uint32_t i = 0; i < p.nrel; i++) {
+  for (uint32_t i = 0; i < p.nrel; i++) {        // العناوين في نظر الدرايفر = DRV_GBASE + إزاحة
     uint32_t off = rd32(rel + 4 * i);
-    uint32_t v = rd32(wr + off) + base;
-    memcpy(wr + off, &v, 4);
+    put32(mem + off, get32(mem + off) + DRV_GBASE);
   }
-  stage(4);
-  asm volatile("fence.i" ::: "memory");
-  stage(5, base + p.entry);
-  const drv_ops_t* ops = ((drv_entry_t)(uintptr_t)(base + p.entry))();
-  stage(6);
-  bool good = ops && ops->version == DRV_API_VERSION && ops->open && ops->close && ops->methods && ops->nmethods > 0 && ops->nmethods <= 16;
-  for (int i = 0; good && i < ops->nmethods; i++) {
-    const drv_method_t& m = ops->methods[i];
-    good = m.name && m.sig && m.fn && strlen(m.sig) <= DRV_MAX_ARGS;
+  DrvEntry d; memset(&d, 0, sizeof d);
+  if (!drv_vm_init(&d.vm, mem, p.memLen, p.imgLen, drv_host_call)) { free(mem); if (err) *err = "bad layout"; return false; }
+  put32(mem + d.vm.apiOff, DRV_API_VERSION);
+  uint32_t opsG = 0;
+  d.mem = mem;
+  if (!vmRun(&d, DRV_GBASE + p.entry, nullptr, 0, &opsG)) { free(mem); if (err) *err = "driver entry fault"; return false; }
+  // اقرأ جدول ops من ذاكرة الدرايفر (تخطيط 32-بت: version,name,info,methods,nmethods,open,close)
+  const uint8_t* o = drv_vm_ptr(&d.vm, opsG, 28);
+  bool good = o && get32(o) == DRV_API_VERSION;
+  int nm = good ? (int)get32(o + 16) : 0;
+  good = good && nm > 0 && nm <= DRV_MAX_METHODS;
+  d.ops.nmethods = nm;
+  if (good) {
+    d.ops.name = drv_vm_str(&d.vm, get32(o + 4), 32);
+    d.ops.info = drv_vm_str(&d.vm, get32(o + 8), 96);
+    d.ops.open = get32(o + 20); d.ops.close = get32(o + 24);
+    good = d.ops.name && d.ops.info && d.ops.open - DRV_GBASE < p.imgLen && d.ops.close - DRV_GBASE < p.imgLen;
+  }
+  for (int i = 0; good && i < nm; i++) {
+    const uint8_t* me = drv_vm_ptr(&d.vm, get32(o + 12) + 12u * i, 12);
+    good = me != nullptr;
+    if (!good) break;
+    DrvMethodInfo& m = d.ops.methods[i];
+    m.name = drv_vm_str(&d.vm, get32(me), 32); m.sig = drv_vm_str(&d.vm, get32(me + 4), DRV_MAX_ARGS + 1); m.fn = get32(me + 8);
+    good = m.name && m.sig && m.fn - DRV_GBASE < p.imgLen;
     bool optional = false;
     for (const char* c = m.sig; good && *c; c++) {
       char l = (char)tolower((unsigned char)*c);
@@ -183,13 +231,10 @@ static bool loadBuf(const uint8_t* b, size_t len, size_t fileSize, String* err) 
       if (isupper((unsigned char)*c)) optional = true; else if (optional) good = false;   // الإلزامي قبل الاختياري
     }
   }
-  if (good) stage(7);
-  if (!good) { execFree(mem); if (err) *err = "bad driver ops"; return false; }
-  DrvEntry& d = g_drv[slot];
-  memset(&d, 0, sizeof(d));
+  if (!good) { free(mem); if (err) *err = "bad driver ops"; return false; }
   strncpy(d.name, p.name, 15); strncpy(d.version, p.ver, 7);
-  d.fileSize = (uint32_t)fileSize; d.memSize = p.memLen; d.ops = ops; d.mem = mem;
-  g_used[slot] = true;
+  d.fileSize = (uint32_t)fileSize; d.memSize = (uint32_t)asz;
+  g_drv[slot] = d; g_used[slot] = true;
   return true;
 }
 
@@ -206,14 +251,6 @@ static uint8_t* readFile(const String& path, size_t* n) {
 // حماية: يُكتب اسم الملف قبل تحميله ويُمحى بعده. إن بقي عند الإقلاع فقد انهار الجهاز أثناء تحميله فيُحجَر.
 #define LOADING_MARK DRV_DIR "/.loading"
 void drv_boot_load() {
-  {
-    esp_reset_reason_t r = esp_reset_reason();
-    bool crashed = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT;
-    g_prevReport = String("reset=") + (int)r + (crashed ? " (crash)" : "");
-    if (g_stageMagic == 0xD15C0DE5 && g_stage) g_prevReport += String(" last-load-stage=") + stageName(g_stage) + " addr=0x" + String(g_stageAddr, HEX);
-    g_stageMagic = 0; g_stage = 0;
-    Serial.println("[drv] " + g_prevReport);
-  }
   if (!g_mux) g_mux = xSemaphoreCreateRecursiveMutex();
   if (!LittleFS.exists(DRV_DIR)) return;
   if (LittleFS.exists(LOADING_MARK)) {
@@ -273,10 +310,10 @@ String drv_list_json() {
     JsonObject o = a.add<JsonObject>();
     o["name"] = g_drv[i].name; o["version"] = g_drv[i].version;
     o["size"] = g_drv[i].fileSize; o["mem"] = g_drv[i].memSize; o["users"] = g_drv[i].users;
-    o["info"] = g_drv[i].ops->info;
+    o["info"] = g_drv[i].ops.info;
     JsonArray ms = o["methods"].to<JsonArray>();
-    for (int k = 0; k < g_drv[i].ops->nmethods; k++) {
-      JsonObject m = ms.add<JsonObject>(); m["name"] = g_drv[i].ops->methods[k].name; m["sig"] = g_drv[i].ops->methods[k].sig;
+    for (int k = 0; k < g_drv[i].ops.nmethods; k++) {
+      JsonObject m = ms.add<JsonObject>(); m["name"] = g_drv[i].ops.methods[k].name; m["sig"] = g_drv[i].ops.methods[k].sig;
     }
   }
   String s; serializeJson(d, s); return s;
@@ -286,6 +323,5 @@ String drv_list_text() {
   String s;
   for (int i = 0; i < DRV_MAX_LOADED; i++) if (g_used[i])
     s += String(g_drv[i].name) + " v" + g_drv[i].version + "  file=" + g_drv[i].fileSize + "B ram=" + g_drv[i].memSize + "B users=" + g_drv[i].users + "\n";
-  if (!s.length()) s = "no drivers\n";
-  return s + "boot: " + g_prevReport;
+  return s.length() ? s : String("no drivers");
 }
