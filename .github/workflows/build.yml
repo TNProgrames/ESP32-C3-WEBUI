@@ -113,15 +113,15 @@ jobs:
           cp $B/firmware.bin release/firmware-$VER.bin
           ls -l release
 
-          # ما يخرج من الـAction (artifact "firmware"): ملفان فقط — الفيرموير، وكل ما عداه (درايفرات وتطبيقات وأدوات)
-          cp release/firmware-$VER.zip art/
-          (cd pkg && zip -qr ../art/other-$VER.zip drivers apps tools)
-          ls -l art
+          # وضع الملفات مباشرةً داخل art/ (الفيرموير + باقي المجلدات بدون أرشيفات مدمجة)
+          cp -r pkg/firmware art/firmware
+          cp -r pkg/drivers pkg/apps pkg/tools art/
+          ls -la art
 
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: art/*
+          path: art/
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
