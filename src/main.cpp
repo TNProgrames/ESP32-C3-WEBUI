@@ -9,7 +9,8 @@
 #include <Update.h>
 #include <esp_timer.h>
 #include <esp_sleep.h>
-#include <driver/rtc_io.h>
+#include <driver/gpio.h>
+#include <soc/soc_caps.h>
 #include <stdarg.h>
 #include "lua_engine.h"
 #include "drv_loader.h"
@@ -55,8 +56,12 @@ const char* wakeReason(int* pin) {
   *pin = -1;
   esp_sleep_wakeup_cause_t c = esp_sleep_get_wakeup_cause();
   if (c == ESP_SLEEP_WAKEUP_TIMER) return "timer";
-  if (c == ESP_SLEEP_WAKEUP_GPIO) {
+  if (c == ESP_SLEEP_WAKEUP_GPIO || c == ESP_SLEEP_WAKEUP_EXT1) {
+#if defined(SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP) && SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
     uint64_t m = esp_sleep_get_gpio_wakeup_status();
+#else
+    uint64_t m = esp_sleep_get_ext1_wakeup_status();
+#endif
     for (int i = 0; i < 6; i++) if (m & (1ULL << i)) { *pin = i; break; }
     return "gpio";
   }
@@ -68,11 +73,17 @@ static void doDeepSleep() {
   if (sleepSecs) esp_sleep_enable_timer_wakeup((uint64_t)sleepSecs * 1000000ULL);
   if (sleepMask) {
     for (int i = 0; i < 6; i++) if (sleepMask & (1u << i)) {
-      rtc_gpio_init((gpio_num_t)i); rtc_gpio_set_direction((gpio_num_t)i, RTC_GPIO_MODE_INPUT_ONLY);
-      if (sleepLevel) { rtc_gpio_pullup_dis((gpio_num_t)i); rtc_gpio_pulldown_en((gpio_num_t)i); }
-      else { rtc_gpio_pulldown_dis((gpio_num_t)i); rtc_gpio_pullup_en((gpio_num_t)i); }
+      gpio_set_direction((gpio_num_t)i, GPIO_MODE_INPUT);
+      if (sleepLevel) { gpio_pullup_dis((gpio_num_t)i); gpio_pulldown_en((gpio_num_t)i); }
+      else { gpio_pulldown_dis((gpio_num_t)i); gpio_pullup_en((gpio_num_t)i); }
+      gpio_hold_en((gpio_num_t)i);                 // يُبقي السحب فعّالًا أثناء النوم
     }
+    gpio_deep_sleep_hold_en();
+#if defined(SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP) && SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
     esp_deep_sleep_enable_gpio_wakeup(sleepMask, sleepLevel ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+#else
+    esp_sleep_enable_ext1_wakeup_io(sleepMask, sleepLevel ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ANY_LOW);
+#endif
   }
   esp_deep_sleep_start();
 }
@@ -1197,6 +1208,8 @@ void setupServerWeb() {
 // --- Setup & Loop ---
 
 void setup() {
+  gpio_deep_sleep_hold_dis();                      // فكّ تثبيت الأرجل بعد الاستيقاظ من النوم العميق
+  for (int i = 0; i < 6; i++) gpio_hold_dis((gpio_num_t)i);
   loadsetting();
   EmSetupAPI();
   setupServerWeb();
