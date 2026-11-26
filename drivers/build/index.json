@@ -7,7 +7,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "7d9ca8c3e7150a01457b93a105b063808a42652264a7ced56a5bc0b7b910ce22",
+      "sha256": "67e7e81b5138659949bbe036cb54a8adc7ceba6b4ead9e697144a18d5f93985c",
       "file": "ads1115.drv",
       "info": "ADS1115 16-bit ADC (I2C)",
       "methods": [
@@ -27,7 +27,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "eea07113625e664c0941d2fa7be9d3d2d024cc31f18b9c5c19f5d4f6a40ba2cf",
+      "sha256": "e0aa76111ef52b3af0ec74da242252d27e4875852480fd661dcead233222b89b",
       "file": "aht20.drv",
       "info": "AHT20 temp/hum (I2C)",
       "methods": [
@@ -47,7 +47,7 @@
       "api": 2,
       "size": 1608,
       "mem": 1436,
-      "sha256": "61b302973cb3d515aad94e262bb9e7de7c01c7126aabab40bb8aa9340232b3d5",
+      "sha256": "3fc49d1b2ab7cd749b177c248dcc1745d682cd262c64bdf2b3e7304bded47601",
       "file": "bh1750.drv",
       "info": "BH1750 light sensor (I2C)",
       "methods": [
@@ -67,7 +67,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "4b267d437a4cb4fc7cb8889fb5889a445b6c2bb40ff9bddee0a40403a913c97e",
+      "sha256": "5df2cb2c420b23868010d385ec74f6592d6a000e05d8e964094d0919ee26fd6b",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -91,7 +91,7 @@
       "api": 2,
       "size": 2240,
       "mem": 2056,
-      "sha256": "d435d1d49c430c882edc487c635a2f96c80a427e21784dd50fe32647994b25e0",
+      "sha256": "ffd3b4d89fbea33256a4dd316d14eb023bb6712a498c7e81feb8285e33050b8a",
       "file": "ds3231.drv",
       "info": "DS3231 RTC (I2C)",
       "methods": [
@@ -115,7 +115,7 @@
       "api": 2,
       "size": 1568,
       "mem": 1408,
-      "sha256": "70cbdb8cac8d2c589a2fe143e025837eace460077f1378c87aeef5432c96f66b",
+      "sha256": "8c155a3e3724abcff1bf28dd485135c272e1abfc41699c819321aa47bdeb6dfa",
       "file": "ina219.drv",
       "info": "INA219 current/power (I2C)",
       "methods": [
@@ -131,7 +131,7 @@
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "1871f6b3d8097572fd38204c6e5fb434506063a48b193fd6626e8d711b5f712d",
+      "sha256": "1115825666e7403d4fbc200fb1dbdcd858c5491218864bc7ebbb4c2c9ca31fe3",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -159,7 +159,7 @@
       "api": 2,
       "size": 1760,
       "mem": 1588,
-      "sha256": "94c3c17c205b7e5e7c1c111410e87f4afed315f53902f1ad1b7c39174a753b40",
+      "sha256": "02d7db1bb6982c9156fa273a8ca60260c95e9e841ee452736877fbf6c69c0e32",
       "file": "mpu6050.drv",
       "info": "MPU6050 accel/gyro (I2C)",
       "methods": [
@@ -179,7 +179,7 @@
       "api": 2,
       "size": 2304,
       "mem": 2108,
-      "sha256": "33fecece57fd25380103a8126c4b6574162edcb2076979fcc75e9a2a920e0941",
+      "sha256": "4c694f05a2b25098d6c39b843be475bc41b22ae1f94f31428694cdc799a60cda",
       "file": "pca9685.drv",
       "info": "PCA9685 16-ch PWM/servo (I2C)",
       "methods": [
@@ -207,7 +207,7 @@
       "api": 2,
       "size": 1884,
       "mem": 1688,
-      "sha256": "210cb5f833f8773b44df26032d124c5dedf511a448bdb216a2d7dea77c2199f7",
+      "sha256": "50a36d2acf57c4a0560e4614f9730d7c293ed0b351b4fa3b1277f85a4c791789",
       "file": "pcf8574.drv",
       "info": "PCF8574 8-bit I/O expander (I2C)",
       "methods": [
@@ -235,7 +235,7 @@
       "api": 2,
       "size": 1736,
       "mem": 1564,
-      "sha256": "3db2036b6c528a5384586a0b25582b023d66c7e33aa86580b46f43c11f435d9b",
+      "sha256": "d4379ce8d9035e06cdb58feb8a89161e242dbfd1fd4811f0dea0802e023b0f0c",
       "file": "sht31.drv",
       "info": "SHT3x temp/hum (I2C)",
       "methods": [
@@ -255,7 +255,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "06376f144f06a4643de8fb028938e25fc18b12a5107b682e1f28d58fcfbc6229",
+      "sha256": "6ab296d59d67e2b53911dabf0192fa600925797aa8fd7dbf808aeb8074c9d2ae",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -307,7 +307,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "a714e15eafc97ddeb7a73f111493c00423b88b56b84290a493bb45a94a6493d6",
+      "sha256": "ce1ae5236b9f51bbed30449509f119b26a28e790228ca8c741e3396f0cd2ae8d",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -599,19 +599,18 @@
     },
     {
       "name": "weather_station",
-      "title": "محطة طقس (3 درايفرات)",
-      "desc": "SHT31 + BH1750 + شاشة OLED اختيارية: حرارة ورطوبة وضوء ونقطة الندى مع رسم حيّ.",
+      "title": "محطة طقس (درايفران)",
+      "desc": "SHT31 + BH1750 معًا في سكريبت واحد: حرارة ورطوبة وضوء ونقطة الندى مع رسم حيّ.",
       "icon": "🌦️",
       "category": "sensors",
       "driver": "sht31",
       "drivers": [
         "sht31",
-        "bh1750",
-        "ssd1306"
+        "bh1750"
       ],
       "file": "weather_station.lua",
-      "size": 1282,
-      "sha256": "64388d3d74f1b6a63e0c255b77ec5c914aa42af50d11647c9de6bc6b08095cef",
+      "size": 911,
+      "sha256": "21587d1b9e43b47d40e745273f91b6c790be2140fb0a3f4db1b6628348249a07",
       "page_file": "weather_station.html",
       "page_size": 2698,
       "page_sha256": "3206660b4a43175538053fa5743fb452597cbaf6bf46984ee4923a03a2efebb6"
