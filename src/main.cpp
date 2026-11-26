@@ -57,7 +57,7 @@ const char* wakeReason(int* pin) {
   esp_sleep_wakeup_cause_t c = esp_sleep_get_wakeup_cause();
   if (c == ESP_SLEEP_WAKEUP_TIMER) return "timer";
   if (c == ESP_SLEEP_WAKEUP_GPIO || c == ESP_SLEEP_WAKEUP_EXT1) {
-    uint64_t m = esp_sleep_get_ext1_wakeup_status();
+    uint64_t m = esp_sleep_get_gpio_wakeup_status();
     for (int i = 0; i < 6; i++) if (m & (1ULL << i)) { *pin = i; break; }
     return "gpio";
   }
@@ -75,7 +75,7 @@ static void doDeepSleep() {
       gpio_hold_en((gpio_num_t)i);                 // يُبقي السحب فعّالًا أثناء النوم
     }
     gpio_deep_sleep_hold_en();
-    esp_sleep_enable_ext1_wakeup_io(sleepMask, sleepLevel ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ANY_LOW);
+    esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(sleepMask, sleepLevel ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
   }
   esp_deep_sleep_start();
 }
