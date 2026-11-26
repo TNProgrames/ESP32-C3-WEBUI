@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32</title>
+    <style>
+        :root { --bg: #0a0a0f; --panel: #16161e; --text: #f1f5f9; --muted: #94a3b8; --input: #000; --border: rgba(255,255,255,0.12); }
+        [data-theme="light"] { --bg: #f1f5f9; --panel: #ffffff; --text: #0f172a; --muted: #64748b; --input: #fff; --border: rgba(0,0,0,0.14); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 15px; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 25px; width: 100%; max-width: 340px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); text-align: center; }
+        h2 { font-size: 16px; margin-bottom: 6px; }
+        p { font-size: 12px; color: var(--muted); margin-bottom: 18px; line-height: 1.6; }
+        input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--input); color: #10b981; font-size: 16px; text-align: center; letter-spacing: 3px; outline: none; margin-bottom: 12px; }
+        input:focus { border-color: #4f46e5; }
+        button.go { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: bold; font-size: 14px; cursor: pointer; }
+        button.go:disabled { opacity: 0.5; }
+        #msg { min-height: 18px; margin-top: 12px; font-size: 12px; color: #ef4444; }
+        .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; }
+        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+        .pw { position: relative; margin-bottom: 12px; } .pw input { margin-bottom: 0; padding-inline: 44px; }
+        .eye { position: absolute; inset-inline-end: 4px; top: 0; bottom: 0; display: flex; align-items: center; background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text); padding: 4px 8px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <svg class="logo" style="width:56px;height:56px;margin-bottom:10px" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><g stroke="url(#lg)" stroke-width="3" stroke-linecap="round"><path d="M15 6v6M24 6v6M33 6v6M15 36v6M24 36v6M33 36v6M6 15h6M6 24h6M6 33h6M36 15h6M36 24h6M36 33h6"/></g><rect x="11" y="11" width="26" height="26" rx="6" fill="url(#lg)"/><path d="M17 27c3-8 6 8 9 0s5-6 5-6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h2 data-t>🔐 نافذة الطوارئ</h2>
+        <p data-t>أدخل المفتاح السري للدخول إلى مدير الملفات.</p>
+        <div class="pw"><input id="k" type="password" placeholder="••••" autocomplete="off" autofocus>
+            <button type="button" class="eye" id="eye" onclick="toggleEye()" aria-label="show password">👁</button></div>
+        <button class="go" id="b" onclick="go()" data-t>دخول</button>
+        <div id="msg"></div>
+    </div>
+    <div class="fabs">
+        <button class="fab" id="fab-lang" onclick="toggleLang()" aria-label="language">EN</button>
+        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
+    </div>
+    <script>
+        function toggleEye() { const k = document.getElementById('k'), show = k.type === 'password'; k.type = show ? 'text' : 'password'; document.getElementById('eye').textContent = show ? '🙈' : '👁'; }
+        const EN = {
+            '🔐 نافذة الطوارئ': '🔐 Emergency access',
+            'أدخل المفتاح السري للدخول إلى مدير الملفات.': 'Enter the secret key to open the file manager.',
+            'دخول': 'Sign in',
+            'محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة': 'Too many attempts, wait a minute and try again',
+            'المفتاح غير صحيح': 'Wrong key',
+            'تعذر الاتصال بالجهاز': 'Cannot reach the device'
+        };
+        const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; };
+        let lang = LS('em_lang') || 'ar', theme = LS('em_theme') || 'dark';
+        function T(s) { return lang === 'en' ? (EN[s] || s) : s; }
+        function applyUi() {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.documentElement.dataset.theme = theme;
+            document.querySelectorAll('[data-t]').forEach(e => { if (!e.dataset.ar) e.dataset.ar = e.textContent.trim(); e.textContent = T(e.dataset.ar); });
+            document.getElementById('fab-lang').textContent = lang === 'ar' ? 'EN' : 'ع';
+            document.getElementById('fab-theme').textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        function toggleLang() { lang = lang === 'ar' ? 'en' : 'ar'; LS('em_lang', lang); applyUi(); }
+        function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; LS('em_theme', theme); applyUi(); }
+        applyUi();
+
+        const k = document.getElementById('k'), b = document.getElementById('b'), m = document.getElementById('msg');
+        k.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        async function go() {
+            if (!k.value) return;
+            b.disabled = true; m.innerText = '';
+            try {
+                const r = await fetch('/em/check?pass=' + encodeURIComponent(k.value));
+                if (r.ok) { location.href = '/em'; return; }
+                m.innerText = r.status === 429 ? T('محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة') : T('المفتاح غير صحيح');
+            } catch (e) { m.innerText = T('تعذر الاتصال بالجهاز'); }
+            b.disabled = false; k.value = ''; k.focus();
+        }
+    </script>
+</body>
+</html>

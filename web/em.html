@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Pro Manager</title>
+    <style>
+        :root { --bg: #0a0a0f; --panel: #16161e; --primary: #4f46e5; --danger: #ef4444; --success: #10b981; --warning: #f59e0b; --text: #f1f5f9; --border: rgba(255,255,255,0.1); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 15px; direction: rtl; }
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        /* Glass Panel */
+        .glass { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+
+        /* Header & Buttons */
+        .header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
+        .btn { border: none; border-radius: 10px; padding: 10px 15px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; transition: 0.2s; color: white; text-decoration: none; }
+
+        .btn-indigo { background: var(--primary); } .btn-indigo:hover { background: #4338ca; }
+        .btn-emerald { background: var(--success); } .btn-emerald:hover { background: #059669; }
+        .btn-red { background: var(--danger); } .btn-red:hover { background: #dc2626; }
+        .btn-amber { background: var(--warning); color: #000; } .btn-amber:hover { background: #d97706; }
+        .btn-ghost { background: rgba(255,255,255,0.05); color: #94a3b8; } .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+        .icon { width: 18px; height: 18px; fill: currentColor; }
+
+        /* Path Bar */
+        .path-bar { background: rgba(255,255,255,0.03); padding: 10px 20px; border-radius: 50px; font-size: 13px; font-weight: bold; color: var(--primary); margin-bottom: 15px; display: inline-block; }
+
+        /* Table */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { text-align: right; padding: 15px; font-size: 11px; color: #64748b; border-bottom: 2px solid var(--border); }
+        td { padding: 12px 15px; border-bottom: 1px solid var(--border); }
+        .file-row:hover { background: rgba(255,255,255,0.02); }
+        .file-item { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+        .actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* Modal Editor */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; display: none; flex-direction: column; padding: 20px; }
+        .modal-box { background: #111118; border: 1px solid var(--border); border-radius: 25px; width: 100%; max-width: 1100px; margin: auto; height: 90vh; display: flex; flex-direction: column; }
+        .modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        textarea { flex: 1; background: #000; color: #10b981; border: none; padding: 20px; font-family: 'Courier New', monospace; font-size: 14px; resize: none; outline: none; }
+
+        .hidden { display: none; }
+        [data-theme="light"] { --bg: #f1f5f9; --panel: #ffffff; --text: #0f172a; --border: rgba(0,0,0,0.14); }
+        [data-theme="light"] textarea { background: #fff; color: #047857; }
+        [data-theme="light"] .modal { background: rgba(255,255,255,0.95); }
+        [data-theme="light"] .modal-box { background: #f8fafc; }
+        [data-theme="light"] .btn-ghost { background: rgba(0,0,0,0.06); color: #475569; }
+        [data-theme="light"] .glass { box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+        .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; z-index: 2000; }
+        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+        @media (max-width: 600px) { .header { flex-direction: column; align-items: stretch; } .btn { flex: 1; justify-content: center; } }
+        .logo { width: 44px; height: 44px; flex: none; }
+        .ed-tools { display: flex; gap: 6px; padding: 8px 15px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+        .ed-tools .btn { padding: 6px 10px; }
+        .ed-tools input { flex: 1; min-width: 80px; max-width: 220px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: #000; color: #10b981; outline: none; direction: ltr; }
+        [data-theme="light"] .ed-tools input { background: #fff; color: #047857; }
+        .ed-body { flex: 1; display: flex; min-height: 0; background: #000; direction: ltr; }
+        [data-theme="light"] .ed-body { background: #fff; }
+        #ed-gutter { margin: 0; padding: 20px 8px 20px 12px; text-align: right; color: #64748b; font: 14px/1.5 'Courier New', monospace; user-select: none; overflow: hidden; min-width: 44px; border-right: 1px solid var(--border); }
+        .ed-body textarea { line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; direction: ltr; text-align: left; }
+        .ed-body textarea.wrap { white-space: pre-wrap; word-break: break-word; }
+        .ed-status { display: flex; justify-content: space-between; padding: 4px 15px; font: 11px monospace; color: #64748b; border-top: 1px solid var(--border); direction: ltr; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header Section -->
+        <div class="glass header">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><g stroke="url(#lg)" stroke-width="3" stroke-linecap="round"><path d="M15 6v6M24 6v6M33 6v6M15 36v6M24 36v6M33 36v6M6 15h6M6 24h6M6 33h6M36 15h6M36 24h6M36 33h6"/></g><rect x="11" y="11" width="26" height="26" rx="6" fill="url(#lg)"/><path d="M17 27c3-8 6 8 9 0s5-6 5-6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div>
+                    <h2 style="font-size:16px;" data-t>مدير الملفات</h2>
+                    <p id="storage-txt" style="font-size:10px; color:#64748b; font-family:monospace;"></p>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <input type="file" id="u-input" class="hidden" onchange="uploadFile()">
+                <button class="btn btn-emerald" onclick="document.getElementById('u-input').click()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/></svg> <span data-t>رفع</span>
+                </button>
+                <button class="btn btn-indigo" onclick="createNewFile()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg> <span data-t>ملف</span>
+                </button>
+                <button class="btn btn-indigo" onclick="createNewDir()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10M15,9V12H12V14H15V17H17V14H20V12H17V9H15Z"/></svg> <span data-t>مجلد</span>
+                </button>
+                <button class="btn btn-red" onclick="formatFS()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M20.37,8.91L19.37,10.64L15.03,8.14L16.03,6.4L18.53,7.85L17.53,6.12L15.8,7.12L14.8,5.38L20,2.38L21,4.11L19.27,5.11L20.27,6.85L22.77,5.4L23.77,7.13L18.57,10.13L20.37,8.91M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg> <span data-t>تهيئة</span>
+                </button>
+                <input type="file" id="ota-input" class="hidden" accept=".bin" onchange="otaFs()">
+                <button class="btn btn-amber" onclick="document.getElementById('ota-input').click()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg> <span data-t>تحديث الواجهة</span>
+                </button>
+                <button class="btn btn-ghost" onclick="logout()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg> <span data-t>خروج</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Breadcrumbs -->
+        <div id="breadcrumbs" class="path-bar"></div>
+
+        <!-- File List -->
+        <div class="glass" style="padding:0; overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:50%" data-t>الاسم</th>
+                        <th style="text-align:center" data-t>الحجم</th>
+                        <th style="text-align:center" data-t>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="file-list"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Editor -->
+    <div id="editor-modal" class="modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span><span id="editor-title" style="color:var(--primary); font-family:monospace;"></span><b id="ed-dirty" style="color:var(--warning);display:none"> ●</b></span>
+                <button class="btn btn-ghost" onclick="closeEditor()" data-t>إغلاق ✕</button>
+            </div>
+            <div class="ed-tools">
+                <button class="btn btn-ghost" onclick="edFont(-1)" aria-label="smaller">A−</button>
+                <button class="btn btn-ghost" onclick="edFont(1)" aria-label="larger">A+</button>
+                <button class="btn btn-ghost" id="ed-wrap" onclick="edWrap()" data-t>التفاف</button>
+                <input id="ed-find" placeholder="🔍" onkeydown="if(event.key==='Enter'){event.preventDefault();edFind(event.shiftKey)}">
+                <button class="btn btn-ghost" onclick="edFind(false)">↓</button>
+                <button class="btn btn-ghost" onclick="edFind(true)">↑</button>
+            </div>
+            <div class="ed-body">
+                <pre id="ed-gutter" aria-hidden="true">1</pre>
+                <textarea id="editor-content" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+            </div>
+            <div class="ed-status"><span id="ed-pos">1:1</span><span id="ed-info"></span></div>
+            <div style="padding:12px 15px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn btn-indigo" onclick="saveFile()" style="padding:12px 40px;" data-t>حفظ الملف</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="fabs">
+        <button class="fab" id="fab-lang" onclick="toggleLang()" aria-label="language">EN</button>
+        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
+    </div>
+
+    <script>
+        let currentPath = "/";
+
+        // --- اللغة والمظهر ---
+        const EN = {
+            'مدير الملفات': 'File manager', 'رفع': 'Upload', 'ملف': 'File', 'مجلد': 'Folder', 'تهيئة': 'Format',
+            'تحديث الواجهة': 'Update UI', 'خروج': 'Logout', 'الاسم': 'Name', 'الحجم': 'Size', 'الإجراءات': 'Actions',
+            'إغلاق ✕': 'Close ✕', 'التفاف': 'Wrap', 'فشل الحفظ': 'Save failed', 'سطر': 'lines', 'تعديلات غير محفوظة. إغلاق بدون حفظ؟': 'Unsaved changes. Close without saving?', 'حفظ الملف': 'Save file', 'الرئيسية': 'Home',
+            'اسم الملف:': 'File name:', 'اسم المجلد:': 'Folder name:', 'حذف نهائي؟': 'Delete permanently?',
+            'الاسم/المسار الجديد:': 'New name/path:', 'تحذير: سيتم مسح الذاكرة بالكامل!': 'Warning: the whole filesystem will be erased!',
+            'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟': 'Updating the UI replaces the whole filesystem and wipes settings and passwords. Continue?',
+            'تم التحديث، يُعاد تشغيل الجهاز...': 'Updated, the device is restarting...',
+            'فشل التحديث: ': 'Update failed: ', 'انقطع الاتصال': 'Connection lost'
+        };
+        const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; };
+        let lang = LS('em_lang') || 'ar';
+        let theme = LS('em_theme') || 'dark';
+        function T(s) { return lang === 'en' ? (EN[s] || s) : s; }
+        function applyUi() {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.documentElement.dataset.theme = theme;
+            document.querySelectorAll('[data-t]').forEach(e => { if (!e.dataset.ar) e.dataset.ar = e.textContent.trim(); e.textContent = T(e.dataset.ar); });
+            document.getElementById('fab-lang').textContent = lang === 'ar' ? 'EN' : 'ع';
+            document.getElementById('fab-theme').textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        function toggleLang() { lang = lang === 'ar' ? 'en' : 'ar'; LS('em_lang', lang); applyUi(); loadFiles(currentPath); }
+        function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; LS('em_theme', theme); applyUi(); }
+
+        // SVGs as strings for offline use
+        const svgDir = '<svg class="icon" style="color:var(--warning)" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10Z"/></svg>';
+        const svgFile = '<svg class="icon" style="color:var(--primary)" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg>';
+        const svgDL = '<svg class="icon" viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"/></svg>';
+        const svgEdit = '<svg class="icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6.02 20.71,5.63L18.37,3.29C17.97,2.9 17.34,2.9 16.95,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>';
+        const svgDel = '<svg class="icon" viewBox="0 0 24 24"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>';
+
+        async function request(url, method = 'GET', body = null) {
+            const res = await fetch(url, { method, body });
+            if (res.status === 404) { window.location.href="/em"; return null; }
+            return res;
+        }
+
+        async function loadFiles(path = "/") {
+            currentPath = path;
+            const res = await request(`/api/list?path=${encodeURIComponent(path)}`);
+            if (!res) return;
+            const data = await res.json();
+
+            document.getElementById('storage-txt').innerText = `USED: ${(data.used/1024).toFixed(1)}KB / TOTAL: ${(data.total/1024).toFixed(1)}KB`;
+
+            const tbody = document.getElementById('file-list');
+            tbody.innerHTML = '';
+
+            updateBreadcrumbs();
+
+            if (path !== "/") {
+                const parent = path.substring(0, path.lastIndexOf('/')) || "/";
+                addFileRow({name: "..", isDir: true, size: 0}, true, parent);
+            }
+
+            data.files.forEach(file => addFileRow(file));
+        }
+
+        function addFileRow(file, isBack = false, backPath = "") {
+            const tbody = document.getElementById('file-list');
+            const row = document.createElement('tr');
+            row.className = "file-row";
+            const icon = file.isDir ? svgDir : svgFile;
+            const fullPath = isBack ? backPath : (currentPath === "/" ? "" : currentPath) + "/" + file.name;
+
+            row.innerHTML = `
+                <td>
+                    <div class="file-item" onclick="${file.isDir ? `loadFiles('${fullPath}')` : `editFile('${fullPath}')`}">
+                        ${icon} <span>${file.name}</span>
+                    </div>
+                </td>
+                <td style="text-align:center; color:#64748b; font-size:11px; font-family:monospace;">${file.isDir ? '--' : (file.size/1024).toFixed(1) + ' KB'}</td>
+                <td>
+                    <div class="actions ${isBack ? 'hidden' : ''}">
+                        <a href="/api/download?path=${encodeURIComponent(fullPath)}" style="color:var(--success)">${svgDL}</a>
+                        <button class="btn btn-ghost" onclick="renameItem('${fullPath}')" style="color:var(--warning)">${svgEdit}</button>
+                        <button class="btn btn-ghost" onclick="deleteItem('${fullPath}')" style="color:var(--danger)">${svgDel}</button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        }
+
+        function updateBreadcrumbs() {
+            const parts = currentPath.split('/').filter(p => p);
+            let html = `<span style="cursor:pointer;" onclick="loadFiles('/')">${T('الرئيسية')}</span>`;
+            let acc = "";
+            parts.forEach(p => { acc += "/" + p; html += ` <span style="color:#334155; margin:0 5px;">/</span> <span style="cursor:pointer;" onclick="loadFiles('${acc}')">${p}</span>`; });
+            document.getElementById('breadcrumbs').innerHTML = html;
+        }
+
+        async function uploadFile() {
+            const file = document.getElementById('u-input').files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append("file", file, (currentPath==="/"?"":currentPath)+"/"+file.name);
+            await fetch('/api/upload', { method: 'POST', body: formData });
+            loadFiles(currentPath);
+        }
+
+        async function createNewFile() {
+            const n = prompt(T("اسم الملف:"));
+            if (n) {
+                const path = (currentPath==="/"?"":currentPath)+"/"+n;
+                openEditor(path, "");
+            }
+        }
+
+        async function createNewDir() {
+            const n = prompt(T("اسم المجلد:"));
+            if (n) {
+                const path = (currentPath==="/"?"":currentPath)+"/"+n;
+                await request(`/api/mkdir?path=${encodeURIComponent(path)}`, 'POST');
+                loadFiles(currentPath);
+            }
+        }
+
+        async function editFile(path) {
+            const res = await request(`/api/read?path=${encodeURIComponent(path)}`);
+            if (!res) return;
+            openEditor(path, await res.text());
+        }
+
+        async function saveFile() {
+            const formData = new FormData();
+            formData.append('content', ta().value);
+            const r = await request(`/api/save?path=${encodeURIComponent(document.getElementById('editor-title').innerText)}`, 'POST', formData);
+            if (!r || !r.ok) { alert(T("فشل الحفظ")); return; }         // فشل: ابقَ في المحرر كي لا تضيع التعديلات
+            setDirty(false); closeEditor(true); loadFiles(currentPath);
+        }
+
+        async function deleteItem(path) {
+            if (confirm(T("حذف نهائي؟"))) { await request(`/api/delete?path=${encodeURIComponent(path)}`, 'DELETE'); loadFiles(currentPath); }
+        }
+
+        async function renameItem(path) {
+            const n = prompt(T("الاسم/المسار الجديد:"), path);
+            if (n) { await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`); loadFiles(currentPath); }
+        }
+
+        async function formatFS() {
+            if (confirm(T("تحذير: سيتم مسح الذاكرة بالكامل!"))) { await request('/api/format', 'POST'); location.reload(); }
+        }
+
+        // تحديث الواجهة (littlefs.bin) عبر OTA بمفتاح الطوارئ
+        function otaFs() {
+            const inp = document.getElementById('ota-input');
+            const f = inp.files[0];
+            if (!f) return;
+            if (!confirm(T("تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟"))) { inp.value = ''; return; }
+            const st = document.getElementById('storage-txt');
+            const x = new XMLHttpRequest();
+            x.open('POST', '/api/ota?type=fs');
+            x.upload.onprogress = e => { if (e.lengthComputable) st.innerText = 'OTA: ' + Math.round(e.loaded / e.total * 100) + '%'; };
+            x.onload = () => {
+                if (x.status === 200) { st.innerText = T('تم التحديث، يُعاد تشغيل الجهاز...'); setTimeout(() => location.reload(), 12000); }
+                else { alert(T('فشل التحديث: ') + x.responseText); inp.value = ''; loadFiles(currentPath); }
+            };
+            x.onerror = () => { alert(T('انقطع الاتصال')); inp.value = ''; };
+            const fd = new FormData(); fd.append('file', f, f.name); x.send(fd);
+        }
+
+        function logout() { document.cookie = "session_key=; Max-Age=0; path=/;"; location.href = "/"; }
+        // ---- محرر الكود ----
+        const ta = () => document.getElementById('editor-content');
+        let edDirty = false, edFontSize = +(localStorage.getItem('em-font') || 14), edSaved = '';
+        function setDirty(d) { edDirty = d; document.getElementById('ed-dirty').style.display = d ? 'inline' : 'none'; }
+        function edGutter() {
+            const n = ta().value.split('\n').length, g = document.getElementById('ed-gutter');
+            if (g.dataset.n != n) { g.dataset.n = n; g.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n'); }
+            g.scrollTop = ta().scrollTop;
+        }
+        function edStatus() {
+            const t = ta(), pre = t.value.slice(0, t.selectionStart).split('\n');
+            document.getElementById('ed-pos').textContent = pre.length + ':' + (pre[pre.length - 1].length + 1);
+            document.getElementById('ed-info').textContent = t.value.split('\n').length + ' ' + T('سطر') + ' · ' + t.value.length + ' B';
+        }
+        function edFont(d) { edFontSize = Math.max(10, Math.min(24, edFontSize + d)); localStorage.setItem('em-font', edFontSize); applyFont(); }
+        function applyFont() { ta().style.fontSize = edFontSize + 'px'; document.getElementById('ed-gutter').style.fontSize = edFontSize + 'px'; }
+        function edWrap() { ta().classList.toggle('wrap'); ta().setAttribute('wrap', ta().classList.contains('wrap') ? 'soft' : 'off'); }
+        function edFind(back) {
+            const q = document.getElementById('ed-find').value, t = ta(); if (!q) return;
+            const v = t.value.toLowerCase(), k = q.toLowerCase();
+            let i = back ? v.lastIndexOf(k, t.selectionStart - 1) : v.indexOf(k, t.selectionEnd);
+            if (i < 0) i = back ? v.lastIndexOf(k) : v.indexOf(k);          // التفاف حول الملف
+            if (i < 0) return;
+            t.focus(); t.setSelectionRange(i, i + k.length);
+            const line = v.slice(0, i).split('\n').length - 1; t.scrollTop = Math.max(0, line * edFontSize * 1.5 - t.clientHeight / 2);
+            edGutter(); edStatus();
+        }
+        function openEditor(path, text) {
+            document.getElementById('editor-title').innerText = path;
+            const t = ta(); t.value = text; edSaved = text; setDirty(false);
+            t.classList.remove('wrap'); t.setAttribute('wrap', 'off'); applyFont();
+            document.getElementById('editor-modal').style.display = 'flex';
+            edGutter(); edStatus(); t.scrollTop = 0; t.focus();
+        }
+        function closeEditor(force) {
+            if (force !== true && edDirty && !confirm(T('تعديلات غير محفوظة. إغلاق بدون حفظ؟'))) return;
+            document.getElementById('editor-modal').style.display = 'none';
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const t = ta();
+            t.addEventListener('input', () => { setDirty(t.value !== edSaved); edGutter(); edStatus(); });
+            t.addEventListener('scroll', edGutter);
+            ['keyup', 'click'].forEach(e => t.addEventListener(e, edStatus));
+            t.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
+                else if (e.key === 'Tab') {                          // Tab = مسافتان بدل الخروج من الحقل
+                    e.preventDefault(); const s = t.selectionStart;
+                    t.setRangeText('  ', s, t.selectionEnd, 'end'); t.dispatchEvent(new Event('input'));
+                } else if (e.key === 'Escape') closeEditor();
+            });
+        });
+        window.onload = () => { applyUi(); loadFiles('/'); };
+    </script>
+</body>
+</html>

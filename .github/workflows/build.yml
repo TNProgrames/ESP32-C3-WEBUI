@@ -68,6 +68,9 @@ jobs:
           [[ "$GITHUB_REF" == refs/tags/v* ]] || VER="dev-${GITHUB_SHA::7}"
           echo "PLATFORMIO_BUILD_FLAGS=-DFW_VERSION=\\\"$VER\\\"" >> "$GITHUB_ENV"
 
+      - name: Generate gzipped emergency pages (web/*.html -> src/em.h)
+        run: python3 tools/gen_em.py
+
       - name: Build firmware
         run: pio run
 

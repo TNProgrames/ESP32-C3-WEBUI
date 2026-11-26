@@ -7,7 +7,7 @@
   let msg = $state(''); let ok = $state(true);
 
   $effect(() => {
-    api('/settings/get_comm').then(r => (c = { ...r, localhost: String(r.localhost || '').replace(/\.local$/i, '') })).catch(() => {});
+    api('/settings/get_comm').then(r => { c = { ...r, localhost: String(r.localhost || '').replace(/\.local$/i, '') }; origHost = c.localhost; }).catch(() => {});
     api('/settings/get_pin').then(r => (pin = r.pin)).catch(() => {});
   });
 
@@ -15,6 +15,7 @@
   const cleanHost = (v) => v.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32);
   const hostOk = $derived(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(c.localhost));
 
+  let origHost = '';
   async function save(e) {
     e.preventDefault();
     if (!hostOk) { ok = false; msg = t('الاسم المحلي: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، دون شرطة في الأول أو الآخر'); return; }
@@ -22,6 +23,12 @@
       await api('/settings/save_comm', c);
       await api('/settings/save_pin', { pin });
       ok = true; msg = t('تم الحفظ');
+      if (c.localhost !== origHost) {            // تغيّر الاسم المحلي: الجهاز يعيد التشغيل، ثم نعيد فتح الصفحة
+        msg = t('تم الحفظ — يُعاد تشغيل الجهاز لتطبيق الاسم المحلي...');
+        const h = location.hostname, viaLocal = /\.local$/i.test(h);
+        setTimeout(() => { location.href = viaLocal ? location.protocol + '//' + c.localhost + '.local' + location.pathname : location.href; }, 9000);
+        origHost = c.localhost;
+      }
     } catch { ok = false; msg = t('فشل الحفظ'); }
   }
 </script>

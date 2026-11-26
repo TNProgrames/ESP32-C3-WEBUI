@@ -11,7 +11,7 @@
 #include <stdarg.h>
 #include "lua_engine.h"
 #include "drv_loader.h"
-#include "em.h"           // تأكد من تعريف index_html داخل هذا الملف
+#include "em.h"           // صفحات الطوارئ المضغوطة (مولَّد من web/*.html)
 #include <string.h>
 
 #define MAX_NAME_LEN   32
@@ -36,6 +36,7 @@ char Admin_Token[33] = "";
 char User_Token[33] = "";
 // --- WiFi is Working 
 bool wifiIsWorking = false;
+volatile uint32_t restartAt = 0;          // إعادة تشغيل مؤجلة (ms) كي يصل ردّ HTTP أولاً
 volatile bool mdnsApplyPending = false;  // إعادة تشغيل mDNS داخل loop() لا داخل callback
 volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
 
@@ -239,6 +240,14 @@ static void startMdns() {
   MDNS.end();
   if (MDNS.begin(hostname_)) { MDNS.addService("http", "tcp", 80); logPrintf("mDNS: http://%s.local\n", hostname_); }
   else logPrintf("mDNS failed\n");
+}
+
+// صفحات الطوارئ مضغوطة gzip (web/*.html → src/em.h)
+static AsyncWebServerResponse* gzPage(AsyncWebServerRequest* r, int code, const uint8_t* data, size_t len) {
+  AsyncWebServerResponse* resp = r->beginResponse_P(code, "text/html", data, len);
+  resp->addHeader("Content-Encoding", "gzip");
+  resp->addHeader("Cache-Control", "no-store");
+  return resp;
 }
 
 // --- Apply WiFi Settings ---
@@ -481,12 +490,12 @@ static bool otaAllowed(AsyncWebServerRequest *request) {
 void EmSetupAPI() {
     server.on("/em", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (isAuthorizedEm(request)) {
-            AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html);
+            AsyncWebServerResponse *response = gzPage(request, 200, em_html_gz, em_html_gz_len);
             refreshSessionEm(response);
             request->send(response);
         } else {
             // غير مصرّح: اعرض نافذة إدخال المفتاح
-            request->send(request->beginResponse_P(401, "text/html", login_html));
+            request->send(gzPage(request, 401, em_login_gz, em_login_gz_len));
         }
     });
 
@@ -727,8 +736,13 @@ void setupServerWeb() {
         wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
       } else if (type == 1) { // Comm
         if (doc["localhost"].is<const char*>() && !validHost(String(doc["localhost"].as<const char*>()))) { request->send(400); return; }
-        updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
-        mdnsApplyPending = true;   // يسري فورًا بلا إعادة تشغيل
+        {
+          String nh = doc["localhost"].as<const char*>(); if (nh.endsWith(".local")) nh.remove(nh.length() - 6);
+          bool changed = nh != String(hostname_);
+          updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
+          mdnsApplyPending = true;                       // يُحدَّث mDNS فورًا
+          if (changed) restartAt = millis() + 1500;      // وعند تغيّر الاسم: حفظ ثم إعادة تشغيل نظيفة
+        }
         updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"]);
       } else if (type == 2) { // Pin
         updateOrCreateJson("/settings.json", "0_Obj.pinreset", doc["pin"]);
@@ -1114,7 +1128,7 @@ void setupServerWeb() {
   server.onNotFound([](AsyncWebServerRequest *request){
     if (request->method() == HTTP_OPTIONS) request->send(200);
     // فُقد /app/index.html أو أول تشغيل: اعرض نافذة مفتاح الطوارئ بدل 404
-    else if (request->method() == HTTP_GET && request->url() == "/") request->send(request->beginResponse_P(200, "text/html", login_html));
+    else if (request->method() == HTTP_GET && request->url() == "/") request->send(gzPage(request, 200, em_login_gz, em_login_gz_len));
     else request->send(404);
   });
 }
@@ -1131,6 +1145,7 @@ void setup() {
 }
 
 void loop() {
+  if (restartAt && (int32_t)(millis() - restartAt) >= 0) { restartAt = 0; ESP.restart(); }
   if (mdnsApplyPending) { mdnsApplyPending = false; loadHost(); startMdns(); }
   if (wifiApplyPending) {
     wifiApplyPending = false;
