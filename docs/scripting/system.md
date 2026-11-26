@@ -1,6 +1,6 @@
 # system — `log` و`storage` و`bus` و`sys`
 
-> **✅ منفَّذ بالكامل (v0.6):** `print`/`log` و`sys.millis` `sys.uptime` `sys.heap` `sys.version` و`storage.get/set/remove/clear` و`bus.publish/subscribe/unsubscribe`. التفاصيل الفعلية في القسم **«المطبّق فعليًا»** في آخر الملف.
+> **✅ منفَّذ بالكامل (v0.6):** `print`/`log` و`sys.millis` `sys.uptime` `sys.heap` `sys.temp` `sys.version` و`storage.get/set/remove/clear` و`bus.publish/subscribe/unsubscribe`. التفاصيل الفعلية في القسم **«المطبّق فعليًا»** في آخر الملف.
 
 ## log
 `log(...)` يكتب في **الطرفية** (تبويب 💻) مسبوقًا باسم السكريبت. يقبل عدة معاملات، و`print` مرادف له. السطر حتى 160 حرفًا.
@@ -31,6 +31,7 @@ bus.subscribe("temp", function(v) log("وصلت الحرارة", v) end)
 ## sys
 - `sys.millis()`: ميلي ثانية منذ إقلاع الجهاز.
 - `sys.heap()`: الذاكرة الحرة بالبايت.
+- `sys.temp()`: حرارة المعالج الداخلية بالدرجة المئوية (رقم عشري، تقريبية ±عدة درجات).
 - `sys.version()`: إصدار الفيرموير.
 
 

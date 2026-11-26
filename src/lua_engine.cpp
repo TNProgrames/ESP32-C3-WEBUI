@@ -259,6 +259,7 @@ static int l_pwm_duty(lua_State* L) {
 static int l_sys_uptime(lua_State* L) { lua_pushinteger(L, (lua_Integer)(millis() / 1000)); return 1; }
 static int l_sys_version(lua_State* L) { lua_pushstring(L, luaeng_fw_version()); return 1; }
 static int l_sys_millis(lua_State* L) { lua_pushinteger(L, (lua_Integer)millis()); return 1; }
+static int l_sys_temp(lua_State* L) { lua_pushnumber(L, temperatureRead()); return 1; }
 static int l_sys_heap(lua_State* L) { lua_pushinteger(L, ESP.getFreeHeap()); return 1; }
 
 static int addTimer(lua_State* L, bool repeat) {
@@ -655,7 +656,7 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg adcF[]  = { {"read", l_adc_read}, {"mv", l_adc_mv}, {"read_mv", l_adc_mv}, {"atten", l_adc_atten}, {NULL, NULL} };
   static const luaL_Reg pwmF[]  = { {"set", l_pwm_set}, {"duty", l_pwm_duty}, {"stop", l_pwm_stop}, {NULL, NULL} };
   static const luaL_Reg timF[]  = { {"every", l_timer_every}, {"after", l_timer_after}, {"cancel", l_timer_cancel}, {NULL, NULL} };
-  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
+  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"temp", l_sys_temp}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
   static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
   static const luaL_Reg stoF[]  = { {"get", l_storage_get}, {"set", l_storage_set}, {"remove", l_storage_remove}, {"clear", l_storage_clear}, {NULL, NULL} };
   static const luaL_Reg busF[]  = { {"publish", l_bus_publish}, {"subscribe", l_bus_subscribe}, {"unsubscribe", l_bus_unsubscribe}, {NULL, NULL} };

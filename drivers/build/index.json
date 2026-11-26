@@ -7,7 +7,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "67e7e81b5138659949bbe036cb54a8adc7ceba6b4ead9e697144a18d5f93985c",
+      "sha256": "daa0a91b73262685c30c200bf72b943ac4229d9cff31c0c862a45c11b7acf34d",
       "file": "ads1115.drv",
       "info": "ADS1115 16-bit ADC (I2C)",
       "methods": [
@@ -27,7 +27,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "e0aa76111ef52b3af0ec74da242252d27e4875852480fd661dcead233222b89b",
+      "sha256": "4cdd03155bac0f12c5bf21b0271da42993a47251d3a28e15e910d45351cc63fe",
       "file": "aht20.drv",
       "info": "AHT20 temp/hum (I2C)",
       "methods": [
@@ -47,7 +47,7 @@
       "api": 2,
       "size": 1608,
       "mem": 1436,
-      "sha256": "3fc49d1b2ab7cd749b177c248dcc1745d682cd262c64bdf2b3e7304bded47601",
+      "sha256": "a20a038bcca681f0f91c840589817a9e9e778a38749ee0d4cc9c25b719fcf66f",
       "file": "bh1750.drv",
       "info": "BH1750 light sensor (I2C)",
       "methods": [
@@ -67,7 +67,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "5df2cb2c420b23868010d385ec74f6592d6a000e05d8e964094d0919ee26fd6b",
+      "sha256": "e5663bee266c2cf9432f7460bc5d338df52c92a1b43525bb0440f124ba251779",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -91,7 +91,7 @@
       "api": 2,
       "size": 2240,
       "mem": 2056,
-      "sha256": "ffd3b4d89fbea33256a4dd316d14eb023bb6712a498c7e81feb8285e33050b8a",
+      "sha256": "f78e0e79de7e0ad005fb533c9978c600d3a7108c97e8f585e4a72853cca4b020",
       "file": "ds3231.drv",
       "info": "DS3231 RTC (I2C)",
       "methods": [
@@ -115,7 +115,7 @@
       "api": 2,
       "size": 1568,
       "mem": 1408,
-      "sha256": "8c155a3e3724abcff1bf28dd485135c272e1abfc41699c819321aa47bdeb6dfa",
+      "sha256": "282121870e2fc336ad45f34027fb9e16a6326a7109baa26ed99db8edac1b5c99",
       "file": "ina219.drv",
       "info": "INA219 current/power (I2C)",
       "methods": [
@@ -131,7 +131,7 @@
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "1115825666e7403d4fbc200fb1dbdcd858c5491218864bc7ebbb4c2c9ca31fe3",
+      "sha256": "9f1337850f3b16e8a2f1eb690f29400d162740c69df4fb9d64d8aa04a52dc3aa",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -159,7 +159,7 @@
       "api": 2,
       "size": 1760,
       "mem": 1588,
-      "sha256": "02d7db1bb6982c9156fa273a8ca60260c95e9e841ee452736877fbf6c69c0e32",
+      "sha256": "7a3ff37f980103966772cbe556aa5aae63b4f8d06806ca32f7f7db65f28ae560",
       "file": "mpu6050.drv",
       "info": "MPU6050 accel/gyro (I2C)",
       "methods": [
@@ -179,7 +179,7 @@
       "api": 2,
       "size": 2304,
       "mem": 2108,
-      "sha256": "4c694f05a2b25098d6c39b843be475bc41b22ae1f94f31428694cdc799a60cda",
+      "sha256": "5161fd77b7b70e7edb5293d6d50537f3e54c377697c9935f4b4a70b1eeeb663f",
       "file": "pca9685.drv",
       "info": "PCA9685 16-ch PWM/servo (I2C)",
       "methods": [
@@ -207,7 +207,7 @@
       "api": 2,
       "size": 1884,
       "mem": 1688,
-      "sha256": "50a36d2acf57c4a0560e4614f9730d7c293ed0b351b4fa3b1277f85a4c791789",
+      "sha256": "806b5e81feeea6c378fac284cbdcd4c990ecada57e6132fd16476d1af8567082",
       "file": "pcf8574.drv",
       "info": "PCF8574 8-bit I/O expander (I2C)",
       "methods": [
@@ -235,7 +235,7 @@
       "api": 2,
       "size": 1736,
       "mem": 1564,
-      "sha256": "d4379ce8d9035e06cdb58feb8a89161e242dbfd1fd4811f0dea0802e023b0f0c",
+      "sha256": "a5a147b27c0b5160ef05e281e2df2b6beaf9c4547183aa052435653db1ef3795",
       "file": "sht31.drv",
       "info": "SHT3x temp/hum (I2C)",
       "methods": [
@@ -255,7 +255,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "6ab296d59d67e2b53911dabf0192fa600925797aa8fd7dbf808aeb8074c9d2ae",
+      "sha256": "d0ba2c2e7a180213bf43aa1714193e3986e2075b67f5aeb8a5a87bf547ce4f55",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -307,7 +307,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "ce1ae5236b9f51bbed30449509f119b26a28e790228ca8c741e3396f0cd2ae8d",
+      "sha256": "5f31de7d4d97e60695518c4ef2423afb5e55bfe7b7ca14a5f4b4b4d854823189",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -577,8 +577,8 @@
       "driver": "",
       "drivers": [],
       "file": "sys_monitor.lua",
-      "size": 466,
-      "sha256": "c9c993cd8af1fe07b78190d8d40285dcd3aa4200642036117bc4c024c1e6744b"
+      "size": 547,
+      "sha256": "bf7aab7c55a6dd2c6a44216b8ce1a8541fa3efe39a8146d5c5fc5fba4a7a7a45"
     },
     {
       "name": "tilt_level",
