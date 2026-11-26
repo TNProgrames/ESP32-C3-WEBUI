@@ -338,13 +338,16 @@ static const char login_html[] PROGMEM = R"rawliteral(
         #msg { min-height: 18px; margin-top: 12px; font-size: 12px; color: #ef4444; }
         .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; }
         .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+        .pw { position: relative; } .pw input { width: 100%; padding-inline-end: 44px; }
+        .eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text); padding: 4px 8px; }
     </style>
 </head>
 <body>
     <div class="card">
         <h2 data-t>🔐 نافذة الطوارئ</h2>
         <p data-t>أدخل المفتاح السري للدخول إلى مدير الملفات.</p>
-        <input id="k" type="password" placeholder="••••" autocomplete="off" autofocus>
+        <div class="pw"><input id="k" type="password" placeholder="••••" autocomplete="off" autofocus>
+            <button type="button" class="eye" id="eye" onclick="toggleEye()" aria-label="show password">👁</button></div>
         <button class="go" id="b" onclick="go()" data-t>دخول</button>
         <div id="msg"></div>
     </div>
@@ -353,6 +356,7 @@ static const char login_html[] PROGMEM = R"rawliteral(
         <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
     </div>
     <script>
+        function toggleEye() { const k = document.getElementById('k'), show = k.type === 'password'; k.type = show ? 'text' : 'password'; document.getElementById('eye').textContent = show ? '🙈' : '👁'; }
         const EN = {
             '🔐 نافذة الطوارئ': '🔐 Emergency access',
             'أدخل المفتاح السري للدخول إلى مدير الملفات.': 'Enter the secret key to open the file manager.',

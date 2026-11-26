@@ -7,7 +7,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "e0a91dbbd8c8dfb6c5aaee215d5918630b356566acbc36466d36477718a17579",
+      "sha256": "d36e8cf0eb22e6ba6ef1c1e7ad21cc31b5ada096c40d47f8aa06a1d559051ed0",
       "file": "ads1115.drv",
       "info": "ADS1115 16-bit ADC (I2C)",
       "methods": [
@@ -27,7 +27,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "1b923b313a34eda99644f3114d7df4523d41e510b5b61b472e18de89f116bf97",
+      "sha256": "3874b02961d71bdb364fef7483dcc453e0d1a0970f11c59c3541b73eab74ab28",
       "file": "aht20.drv",
       "info": "AHT20 temp/hum (I2C)",
       "methods": [
@@ -47,7 +47,7 @@
       "api": 2,
       "size": 1608,
       "mem": 1436,
-      "sha256": "11e83aa46f6c7e81fb761e7ed588182098cd3bfa916f93039008e724c0b53ff9",
+      "sha256": "0358810b15ef4f20e88ec81fb8badf92f2da4c800b8436ee21f3ea15ac9e55d9",
       "file": "bh1750.drv",
       "info": "BH1750 light sensor (I2C)",
       "methods": [
@@ -67,7 +67,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "35cf281752d6300a8f9e90970c9e6dbfe7ee22aeac748ca79e6941b746cf8cc8",
+      "sha256": "fbeb7804daed8ae7f539e5e171881936062f22babcd52793a6feadd624cf7186",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -91,7 +91,7 @@
       "api": 2,
       "size": 2240,
       "mem": 2056,
-      "sha256": "46463447e22445ebad3a39052a8f794f62050c5c263fd740c4eeb7a3e24d3486",
+      "sha256": "f84fd1f10e2a34f00ccd604761a73524e5fcddf3ed2d981e208078bd155e243f",
       "file": "ds3231.drv",
       "info": "DS3231 RTC (I2C)",
       "methods": [
@@ -115,7 +115,7 @@
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "c962d07cc4dedc0255db430ace03704645a39753048fca8bc47cda430b0d8b9c",
+      "sha256": "4f1967d242fbc4e172adc5834c512c98dff039f7f1f679706b21c7316582a0ff",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -143,7 +143,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "02686adaf7e85840779cd78877fc0a7ae8e3cd43a497db2c789604f3329d6c63",
+      "sha256": "d830c7cf958ecd25a7074805b40060f3d081f1667d9f665db1e1dcc95e2b4336",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -195,7 +195,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "fec004c127fd897aa73c2d6d730501bf87c2fc7048de0b5151cc4f2a5c24a69a",
+      "sha256": "25bf4030ea6b99f99932a8b1d4d2f39368dff03efcf155794e939a4cd57cf819",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -238,8 +238,8 @@
         "ads1115"
       ],
       "file": "adc_scope.lua",
-      "size": 638,
-      "sha256": "59f92e26d3c571595e0ba33e879176f22b063c78f7b6edfda932367ca4d6754e",
+      "size": 846,
+      "sha256": "b1d93b455ec082b3907ff2a4fa7f6ac2385afd6073549113aa331205d7e76b26",
       "page_file": "adc_scope.html",
       "page_size": 3227,
       "page_sha256": "9487cfcf127e1b5013fca9ef2dd83d11b18756ccfc3cc85a71b393bc3da4b4cc"
@@ -255,8 +255,8 @@
         "aht20"
       ],
       "file": "aht_dash.lua",
-      "size": 622,
-      "sha256": "6b126b408290af52133c8c78cf0d4aa46080354b579fcd7c66533a5b00b494d7",
+      "size": 794,
+      "sha256": "b65676dbf66151f5cda8c47080656b4d15b76f07586f576470d1b35cad0a5254",
       "page_file": "aht_dash.html",
       "page_size": 2913,
       "page_sha256": "9a6ec93ea4f2573924532c1e057a84300827065a64d972fee099270f268767bb"
@@ -272,8 +272,8 @@
         "bme280"
       ],
       "file": "bme_monitor.lua",
-      "size": 503,
-      "sha256": "5f5d7311c12d71be7830074dbc9632ea839b9ba319b20d7cf7d6e09cf82cea19",
+      "size": 651,
+      "sha256": "f26aa7d98f0a77f8020fadbf8b522a7c3199c7bd37084c9790b46260a7bd5e7a",
       "page_file": "bme_monitor.html",
       "page_size": 2508,
       "page_sha256": "3ff600d60d6fa4e88cc0e6d737f2bf0138e33b1be0905386982fb9b19c0feedc"
@@ -303,8 +303,8 @@
         "bh1750"
       ],
       "file": "light_meter.lua",
-      "size": 423,
-      "sha256": "71783a31fba23365fdf3c5aab197cd62c5319493ac2eae47ca010e5a9ef8462b",
+      "size": 594,
+      "sha256": "6d8a0e378ee7253279914f5d812f53c750f9c11a95990d03c5eef5561c4c71c7",
       "page_file": "light_meter.html",
       "page_size": 3452,
       "page_sha256": "642d2653fa6f79da6b1cd9ce01d07dee15a7bde4975749b98e59288384454d33"
@@ -334,8 +334,8 @@
         "ds3231"
       ],
       "file": "rtc_clock.lua",
-      "size": 1020,
-      "sha256": "e39d17923abb6762726537731099a7c1d52c0518927a2090a878f19819137bba",
+      "size": 1241,
+      "sha256": "cd469c96c1cbb579c65030428970bda83545d8bf8cbdc1ada8d51a428acdc8ba",
       "page_file": "rtc_clock.html",
       "page_size": 3512,
       "page_sha256": "392a7261702b1948fab4d0861d960a9b559e81e37ed1051105e70043a3bc7a0b"
