@@ -23,4 +23,4 @@ timer.every(200, function()
   if not mv then p:emit("err", "read") return end
   p:emit("v", mv)
 end)
-on_stop(function() if dev then dev:close() end end)
+function on_stop() if dev then dev:close() end end

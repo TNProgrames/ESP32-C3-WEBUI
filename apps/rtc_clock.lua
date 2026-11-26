@@ -31,4 +31,4 @@ timer.every(1000, function()
   n = n + 1
   if n % 10 == 1 then local c = rtc:temp(); if c then p:emit("c", c / 100) end end
 end)
-on_stop(function() if dev then dev:close() end end)
+function on_stop() if dev then dev:close() end end

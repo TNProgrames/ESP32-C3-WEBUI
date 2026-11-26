@@ -23,4 +23,4 @@ timer.every(1000, function()
   p:emit("t", t / 100)
   p:emit("h", h / 100)
 end)
-on_stop(function() if dev then dev:close() end end)
+function on_stop() if dev then dev:close() end end

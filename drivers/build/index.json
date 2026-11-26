@@ -7,7 +7,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "d36e8cf0eb22e6ba6ef1c1e7ad21cc31b5ada096c40d47f8aa06a1d559051ed0",
+      "sha256": "61d16166d976e753952c903e14c19ca7cf7219211ef56d2d0f3de7a3b611cd9e",
       "file": "ads1115.drv",
       "info": "ADS1115 16-bit ADC (I2C)",
       "methods": [
@@ -27,7 +27,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "3874b02961d71bdb364fef7483dcc453e0d1a0970f11c59c3541b73eab74ab28",
+      "sha256": "6ba10fa8c5e8e009b259125134c4d957495628047b7a70decaba13238df04cf3",
       "file": "aht20.drv",
       "info": "AHT20 temp/hum (I2C)",
       "methods": [
@@ -47,7 +47,7 @@
       "api": 2,
       "size": 1608,
       "mem": 1436,
-      "sha256": "0358810b15ef4f20e88ec81fb8badf92f2da4c800b8436ee21f3ea15ac9e55d9",
+      "sha256": "e0d4d0073295fe0b7fc89fb9aac01e2017466cc604a8b82d4e69fc61f3088b24",
       "file": "bh1750.drv",
       "info": "BH1750 light sensor (I2C)",
       "methods": [
@@ -67,7 +67,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "fbeb7804daed8ae7f539e5e171881936062f22babcd52793a6feadd624cf7186",
+      "sha256": "acc637d010ac039d6d52443c1d0a079dbace34852838bb2213c14170e1c7be7d",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -91,7 +91,7 @@
       "api": 2,
       "size": 2240,
       "mem": 2056,
-      "sha256": "f84fd1f10e2a34f00ccd604761a73524e5fcddf3ed2d981e208078bd155e243f",
+      "sha256": "a7abc45dd676f0d979da98531aa77f499d99e2ad8ebe22704e17bd765d4f9bef",
       "file": "ds3231.drv",
       "info": "DS3231 RTC (I2C)",
       "methods": [
@@ -115,7 +115,7 @@
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "4f1967d242fbc4e172adc5834c512c98dff039f7f1f679706b21c7316582a0ff",
+      "sha256": "ac571ede610dcd76f8daa3bb9941266e77e5083b9ea243706a918e88115b6e2a",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -143,7 +143,7 @@
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "d830c7cf958ecd25a7074805b40060f3d081f1667d9f665db1e1dcc95e2b4336",
+      "sha256": "b5a6536d8529bdf0185e375f9119699136188522946e94ea8ac63826b72b9f82",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -195,7 +195,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "25bf4030ea6b99f99932a8b1d4d2f39368dff03efcf155794e939a4cd57cf819",
+      "sha256": "daa367575701f36d315c5997dcb0f1fc636a2d4ba1710371c62f9cc615f9a362",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -238,8 +238,8 @@
         "ads1115"
       ],
       "file": "adc_scope.lua",
-      "size": 846,
-      "sha256": "b1d93b455ec082b3907ff2a4fa7f6ac2385afd6073549113aa331205d7e76b26",
+      "size": 845,
+      "sha256": "9c249959fb54cdb16991456f0c49aa03193332c2537663dd6b385f436c558b1e",
       "page_file": "adc_scope.html",
       "page_size": 3227,
       "page_sha256": "9487cfcf127e1b5013fca9ef2dd83d11b18756ccfc3cc85a71b393bc3da4b4cc"
@@ -255,8 +255,8 @@
         "aht20"
       ],
       "file": "aht_dash.lua",
-      "size": 794,
-      "sha256": "b65676dbf66151f5cda8c47080656b4d15b76f07586f576470d1b35cad0a5254",
+      "size": 793,
+      "sha256": "2acd7b65bd05bbe7b500339573184aab6ed2c1bd2d2b003cccc817c38c5a8335",
       "page_file": "aht_dash.html",
       "page_size": 2913,
       "page_sha256": "9a6ec93ea4f2573924532c1e057a84300827065a64d972fee099270f268767bb"
@@ -272,8 +272,8 @@
         "bme280"
       ],
       "file": "bme_monitor.lua",
-      "size": 651,
-      "sha256": "f26aa7d98f0a77f8020fadbf8b522a7c3199c7bd37084c9790b46260a7bd5e7a",
+      "size": 650,
+      "sha256": "439af6e7718d9f068b1c900b4f0f79441ddae0379a13bbd9896263681219aff0",
       "page_file": "bme_monitor.html",
       "page_size": 2508,
       "page_sha256": "3ff600d60d6fa4e88cc0e6d737f2bf0138e33b1be0905386982fb9b19c0feedc"
@@ -289,8 +289,8 @@
         "lcd1602"
       ],
       "file": "lcd_clock.lua",
-      "size": 409,
-      "sha256": "0b36e6411f4ea2307886b5c63b6f362a96efe6875c45a2eb104d9524267174d4"
+      "size": 408,
+      "sha256": "712caa8e210f27f5f611c14a6bf50084fb1f0be9c547d80afe795b6aaaeaaa19"
     },
     {
       "name": "light_meter",
@@ -303,8 +303,8 @@
         "bh1750"
       ],
       "file": "light_meter.lua",
-      "size": 594,
-      "sha256": "6d8a0e378ee7253279914f5d812f53c750f9c11a95990d03c5eef5561c4c71c7",
+      "size": 593,
+      "sha256": "40c96fa67bb514e79e0cd3ec3ba2958ac0655a024e7bc5ab9d30b24cbf08b840",
       "page_file": "light_meter.html",
       "page_size": 3452,
       "page_sha256": "642d2653fa6f79da6b1cd9ce01d07dee15a7bde4975749b98e59288384454d33"
@@ -320,8 +320,8 @@
         "ssd1306"
       ],
       "file": "oled_hello.lua",
-      "size": 418,
-      "sha256": "11315fc81c185311bf1e735d79f75bf227df578a8c091ab7ec060d375a167884"
+      "size": 417,
+      "sha256": "ee3aec701cc6b93f82e0f77c20515cbdfd55ab3144f16bc42104dfb8afd6d766"
     },
     {
       "name": "rtc_clock",
@@ -334,8 +334,8 @@
         "ds3231"
       ],
       "file": "rtc_clock.lua",
-      "size": 1241,
-      "sha256": "cd469c96c1cbb579c65030428970bda83545d8bf8cbdc1ada8d51a428acdc8ba",
+      "size": 1240,
+      "sha256": "f68c96e66d681ca62abc370db682aa0832775a51d09978065cabb66b8e33b9a8",
       "page_file": "rtc_clock.html",
       "page_size": 3512,
       "page_sha256": "392a7261702b1948fab4d0861d960a9b559e81e37ed1051105e70043a3bc7a0b"

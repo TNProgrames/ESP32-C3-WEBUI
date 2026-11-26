@@ -10,4 +10,4 @@ timer.every(1000, function()
   d:text(8, 24, "up " .. sys.uptime() .. "s")
   d:show()
 end)
-on_stop(function() d:clear() d:show() d:close() end)
+function on_stop() d:clear() d:show() d:close() end

@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { api, apiRaw, authHeaders } from '../api.js';
-  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, getMode, setMode } from '../drvstore.js';
+  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, appDrivers, getMode, setMode } from '../drvstore.js';
   import { t } from '../store.svelte.js';
   import AppCards from './AppCards.svelte';
   import { lab } from '../lab.svelte.js';
@@ -22,40 +22,17 @@
   let tab = $state('apps');          // apps | drivers | settings
   let busyApp = $state('');
 
-  // نموذج الاختبار
-  let sel = $state('');
-  let sda = $state(8), scl = $state(9);
-  let cfgText = $state('');
-  let method = $state('');
-  let args = $state([]);
   let box = $state();
-
-  const cur = $derived(list.find((d) => d.name === sel));
-  const mth = $derived(cur?.methods.find((m) => m.name === method));
-  const sigs = $derived([...(mth?.sig || '')]);
 
   async function refresh() {
     try {
       list = await api('/drv/list');
-      if (!list.some((d) => d.name === sel)) sel = list[0]?.name || '';
       const r = await api('/terminal/log?since=' + lab.seq);
       lab.seq = r.seq;
       if (r.text) { lab.out = (lab.out + r.text).slice(-6000); queueMicrotask(() => { if (box) box.scrollTop = box.scrollHeight; }); }
     } catch {}
   }
   $effect(() => { refresh(); const id = setInterval(refresh, 1500); return () => clearInterval(id); });
-
-  // عند تغيير الدرايفر المختار فقط (لا عند كل تحديث للقائمة): الدالة الأولى وآخر إعداد محفوظ
-  $effect(() => {
-    const n = sel;
-    untrack(() => {
-      const d = list.find((x) => x.name === n);
-      if (!d) return;
-      method = d.methods[0]?.name || ''; args = [];
-      cfgText = localStorage.getItem('drv-cfg-' + d.name) || '';
-    });
-  });
-  $effect(() => { method; untrack(() => { args = []; }); });
 
   // ---- التثبيت والحذف (المنطق في drvstore.js) ----
   async function install(buf) {
@@ -98,11 +75,24 @@
     } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
     busyApp = ''; refresh(); loadScripts();
   }
+  // حذف التطبيق: السكريبت وصفحته ودرايفراته (إلا ما يستعمله تطبيق مثبّت آخر)
   async function delApp(a) {
-    if (!confirm(t('حذف التطبيق') + ' ' + a.name + '؟')) return;
-    busyApp = a.name;
-    try { await apiRaw('/script/delete?name=' + encodeURIComponent(a.name)); msg = t('تم الحذف'); } catch { msg = t('تعذر الحذف'); }
-    busyApp = ''; loadScripts();
+    const mine = appDrivers(a);
+    const others = apps.filter((x) => x.name !== a.name && myScripts.includes(x.name));
+    const drop = mine.filter((d) => list.some((i) => i.name === d) && !others.some((x) => appDrivers(x).includes(d)));
+    const keep = mine.filter((d) => list.some((i) => i.name === d) && !drop.includes(d));
+    let q = t('حذف التطبيق') + ' ' + a.name + (drop.length ? ' + ' + t('درايفر') + ': ' + drop.join(', ') : '') + '؟';
+    if (keep.length) q += '\n(' + t('يبقى لأن تطبيقًا آخر يستعمله') + ': ' + keep.join(', ') + ')';
+    if (!confirm(q)) return;
+    busyApp = a.name; msg = '';
+    try {
+      await apiRaw('/script/delete?name=' + encodeURIComponent(a.name));
+      if (a.page_file) await fetch('/api/delete?path=' + encodeURIComponent('/ui/' + a.name + '.html'), { method: 'DELETE', headers: authHeaders() });
+      const fail = [];
+      for (const d of drop) { const r = await removeFromDevice(d); if (!r.ok) fail.push(d + ': ' + r.error); }
+      msg = fail.length ? t('تعذر الحذف') + ': ' + fail.join(' · ') : '🗑 ' + t('تم الحذف');
+    } catch { msg = t('تعذر الحذف'); }
+    busyApp = ''; refresh(); loadScripts();
   }
   async function runApp(a) {
     try { await apiRaw('/script/runfile?name=' + encodeURIComponent(a.name)); msg = t('تم التشغيل'); } catch { msg = t('تعذر التشغيل'); }
@@ -125,54 +115,6 @@
   }
 
   // ---- توليد Lua للاختبار ----
-  function lstr(s) { return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '').replace(/[\x00-\x1f]/g, (c) => '\\' + c.charCodeAt(0)) + '"'; }
-  function lval(v) {
-    v = v.trim();
-    if (/^-?\d+$/.test(v) || /^0x[0-9a-fA-F]+$/.test(v) || v === 'true' || v === 'false') return v;
-    return lstr(v);
-  }
-  function cfgLua() {
-    const parts = [];
-    for (const line of cfgText.split('\n')) {
-      const m = line.match(/^\s*([A-Za-z_]\w*)\s*=\s*(.+?)\s*$/);
-      if (m) parts.push(m[1] + ' = ' + lval(m[2]));
-    }
-    return '{' + parts.join(', ') + '}';
-  }
-  function argLua(c, i) {
-    const v = args[i];
-    switch (c.toLowerCase()) {
-      case 'i': return String(parseInt(v === undefined || v === '' ? '0' : v, 10) || 0);
-      case 'b': return v ? 'true' : 'false';
-      default: return lstr(v ?? '');
-    }
-  }
-  function usedArgs() {
-    // الاختيارية الفارغة (من النهاية) تُحذف
-    let n = sigs.length;
-    while (n > 0 && sigs[n - 1] === sigs[n - 1].toUpperCase() && (args[n - 1] === undefined || args[n - 1] === '' || args[n - 1] === false)) n--;
-    return n;
-  }
-  function genCode() {
-    const a = sigs.slice(0, usedArgs()).map((c, i) => argLua(c, i)).join(', ');
-    return `-- اختبار ${cur.name}:${method} (مولَّد من تبويب درايفرات)\n` +
-      `i2c.begin(${Number(sda) || 8}, ${Number(scl) || 9}, 100000)\n` +
-      `local d, err = drv.open(${lstr(cur.name)}, ${cfgLua()})\n` +
-      `if not d then print("open:", err) i2c.stop() return end\n` +
-      `print("${method}:", d:${method}(${a}))\n` +
-      `d:close()\ni2c.stop()`;
-  }
-  async function runTest() {
-    if (!cur || !method) return;
-    localStorage.setItem('drv-cfg-' + cur.name, cfgText);
-    busy = true;
-    try {
-      await fetch('/script/run?name=drvtest', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' }, body: genCode() });
-    } catch { msg = t('تعذر التشغيل (تحقق من الاسم أو الحجم)'); }
-    busy = false;
-  }
-  function toLab() { lab.name = 'drvtest'; lab.code = genCode(); lab.asLib = false; lab.showPage = false; go('lab'); }
-
   const tr = { i: 'int', s: 'str', b: 'bool', d: 'data' };
 </script>
 <div class="glass">
@@ -230,34 +172,6 @@
     </div>
   {/each}
 </div>
-
-{#if cur}
-<div class="glass">
-  <h3 style="margin:0 0 8px">🧪 {t('اختبار')} — {cur.name}</h3>
-  <div class="row" style="gap:8px;margin-bottom:8px">
-    <label style="font-size:13px">SDA <input type="number" style="width:60px" bind:value={sda} /></label>
-    <label style="font-size:13px">SCL <input type="number" style="width:60px" bind:value={scl} /></label>
-    <select bind:value={sel}>{#each list as d}<option value={d.name}>{d.name}</option>{/each}</select>
-  </div>
-  <textarea rows="2" style="width:100%;direction:ltr;box-sizing:border-box" bind:value={cfgText} placeholder={'addr=0x27\ncols=16'}></textarea>
-  <div class="row" style="gap:8px;margin:8px 0">
-    <select bind:value={method}>{#each cur.methods as m}<option value={m.name}>{m.name}</option>{/each}</select>
-  </div>
-  {#each sigs as c, i}
-    <label style="display:block;font-size:13px;margin-bottom:6px">
-      {t('معامل')} {i + 1} ({tr[c.toLowerCase()]}{c === c.toUpperCase() ? ' ' + t('اختياري') : ''})
-      {#if c.toLowerCase() === 'b'}<input type="checkbox" bind:checked={args[i]} />
-      {:else if c.toLowerCase() === 'i'}<input type="number" style="width:100%;box-sizing:border-box" bind:value={args[i]} />
-      {:else}<input type="text" style="width:100%;box-sizing:border-box" bind:value={args[i]} />{/if}
-    </label>
-  {/each}
-  <div class="row" style="gap:8px">
-    <button class="btn green" onclick={runTest} disabled={busy || !method}>▶ {t('تشغيل')}</button>
-    <button class="btn ghost" onclick={toLab}>{t('فتح في المختبر')}</button>
-  </div>
-  <pre style="direction:ltr;text-align:left;font-size:12px;margin:8px 0 0;overflow:auto;white-space:pre-wrap">{genCode()}</pre>
-</div>
-{/if}
 
 {:else}
 <div class="glass">

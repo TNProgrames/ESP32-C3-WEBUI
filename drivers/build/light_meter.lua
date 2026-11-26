@@ -18,4 +18,4 @@ timer.every(500, function()
   if not lx then p:emit("err", "read") return end
   p:emit("lux", lx / 10)
 end)
-on_stop(function() if dev then dev:close() end end)
+function on_stop() if dev then dev:close() end end

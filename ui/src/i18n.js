@@ -6,6 +6,7 @@ export const en = {
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Drivers
   'درايفرات': 'Drivers',
+  'يبقى لأن تطبيقًا آخر يستعمله': 'Kept because another app uses it',
   'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'لا توجد تطبيقات (اضغط 🔄)': 'No apps (press 🔄)',
   'مثبّت': 'Installed', 'صفحة + canvas': 'Page + canvas', 'درايفر': 'driver', 'حذف التطبيق': 'Delete app', 'تم الحذف': 'Deleted', 'تعذر الحذف': 'Could not delete', 'الدرايفرات': 'Drivers', 'الإعدادات': 'Settings',
 
