@@ -14,17 +14,28 @@
     const s = q.trim().toLowerCase();
     return !s || [a.title, a.name, a.desc, ...appDrivers(a)].some((x) => (x || '').toLowerCase().includes(s));
   }));
+  const PER = 5;
+  let pg = $state(1);
+  const pages = $derived(Math.max(1, Math.ceil(shown.length / PER)));
+  const cur = $derived(Math.min(pg, pages));
+  const view = $derived(shown.slice((cur - 1) * PER, cur * PER));
+  // أرقام الصفحات مع اختصار بنقاط: 1 … 4 5 6 … 12
+  const nums = $derived.by(() => {
+    const r = [];
+    for (let i = 1; i <= pages; i++) if (i === 1 || i === pages || Math.abs(i - cur) <= 1) r.push(i); else if (r[r.length - 1] !== '…') r.push('…');
+    return r;
+  });
   const have = (d) => installed.some((i) => i.name === d);
 </script>
 
 <div class="glass">
   <div class="row" style="gap:6px">
-    <input style="flex:1;min-width:0" type="search" placeholder={'🔍 ' + t('بحث عن تطبيق أو درايفر')} bind:value={q} />
+    <input style="flex:1;min-width:0" type="search" placeholder={'🔍 ' + t('بحث عن تطبيق أو درايفر')} bind:value={q} oninput={() => (pg = 1)} />
     <button class="btn ghost" title={t('جلب')} disabled={!!busyName} onclick={onRefresh}>🔄</button>
   </div>
   <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
     {#each CATS as [id, ic, lb]}
-      <button class="btn {cat === id ? '' : 'ghost'}" style="padding:4px 10px;font-size:12px" onclick={() => (cat = id)}>{ic} {t(lb)}</button>
+      <button class="btn {cat === id ? '' : 'ghost'}" style="padding:4px 10px;font-size:12px" onclick={() => { cat = id; pg = 1; }}>{ic} {t(lb)}</button>
     {/each}
   </div>
 </div>
@@ -33,7 +44,7 @@
   <div class="glass" style="color:var(--muted);font-size:13px">{msg || (apps.length ? t('لا نتائج') : t('لا توجد تطبيقات (اضغط 🔄)'))}</div>
 {/if}
 
-{#each shown as a (a.name)}
+{#each view as a (a.name)}
   {@const has = scripts.includes(a.name)}
   {@const missing = appDrivers(a).filter((d) => !have(d))}
   {@const busy = busyName === a.name}
@@ -67,3 +78,15 @@
     </div>
   </div>
 {/each}
+
+{#if pages > 1}
+  <div class="row" style="gap:5px;justify-content:center;flex-wrap:wrap;margin:6px 0">
+    <button class="btn ghost" style="padding:4px 10px" disabled={cur === 1} onclick={() => (pg = cur - 1)}>‹</button>
+    {#each nums as n}
+      {#if n === '…'}<span style="color:var(--muted)">…</span>
+      {:else}<button class="btn {n === cur ? '' : 'ghost'}" style="padding:4px 10px;min-width:32px" onclick={() => (pg = n)}>{n}</button>{/if}
+    {/each}
+    <button class="btn ghost" style="padding:4px 10px" disabled={cur === pages} onclick={() => (pg = cur + 1)}>›</button>
+  </div>
+  <div style="text-align:center;color:var(--muted);font-size:11px">{shown.length} {t('تطبيق')} · {t('صفحة')} {cur}/{pages}</div>
+{/if}

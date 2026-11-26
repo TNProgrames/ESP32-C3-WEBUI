@@ -204,8 +204,60 @@ def t_ads(blob):
     assert d.call('read', 4)[0] == E_ARGS and d.call('gain', 6)[0] == E_ARGS
     d.close()
 
+def _crc8(b):
+    c = 0xFF
+    for x in b:
+        c ^= x
+        for _ in range(8): c = ((c << 1) ^ 0x31) & 0xFF if c & 0x80 else (c << 1) & 0xFF
+    return c
+
+def t_sht(blob):
+    good = bytes([0xBE, 0xEF, _crc8(b'\xBE\xEF'), 0x66, 0x66, _crc8(b'\x66\x66')])
+    d = Dev(blob); assert d.open({}) == 0 and d.i2c[0] == (0x44, bytes([0x30, 0xA2])), d.i2c
+    d.readbuf = good
+    rc, v = d.call('read'); assert rc == 0 and v == [8552, 4000], (rc, v)      # 85.52°C و40.00%
+    d.readbuf = good[:2] + bytes([good[2] ^ 1]) + good[3:]; assert d.call('read')[0] == 6   # CRC خاطئ
+    d.close()
+
+def t_ina(blob):
+    d = Dev(blob, regs={0x00: bytes([0x39, 0x9F]), 0x01: struct.pack('>h', 1000), 0x02: struct.pack('>H', (5000 // 4) << 3)})
+    assert d.open({'shunt_mohm': 100}) == 0
+    assert d.call('read') == (0, [5000, 100, 500])                            # 5V و100mA و500mW
+    d.regs[0x01] = struct.pack('>h', -500); assert d.call('read') == (0, [5000, -50, -250])
+    d.close()
+    assert Dev(blob).open({}) != 0
+
+def t_pcf(blob):
+    d = Dev(blob); assert d.open({'init': 0xF0}) == 0 and d.i2c[0] == (0x20, bytes([0xF0]))
+    d.i2c.clear()
+    assert d.call('pin', 0, 1)[0] == 0 and d.i2c[-1][1] == bytes([0xF1])
+    assert d.call('toggle', 7)[0] == 0 and d.i2c[-1][1] == bytes([0x71])
+    assert d.call('write', 0xAA)[0] == 0 and d.i2c[-1][1] == bytes([0xAA])
+    assert d.call('pin', 8, 1)[0] == E_ARGS and d.call('write', 256)[0] == E_ARGS
+    d.readbuf = bytes([0x5A]); assert d.call('read') == (0, [0x5A])
+    d.close()
+
+def t_pca(blob):
+    d = Dev(blob); assert d.open({'freq': 50}) == 0
+    sets = [w for _, w in d.i2c if w[0] == 0xFE]; assert sets and sets[0][1] == 121, d.i2c       # 50Hz → prescale 121
+    d.i2c.clear(); assert d.call('servo', 2, 90)[0] == 0
+    assert d.i2c[-1][1] == bytes([0x06 + 8, 0, 0, 0x33, 0x01]), d.i2c                           # 1.5ms → 307 tick
+    d.i2c.clear(); d.call('pwm', 0, 0); assert d.i2c[-1][1] == bytes([0x06, 0, 0, 0, 0x10])
+    d.call('pwm', 1, 4095); assert d.i2c[-1][1] == bytes([0x0A, 0, 0x10, 0, 0])
+    assert d.call('servo', 16, 0)[0] == E_ARGS and d.call('servo', 0, 181)[0] == E_ARGS and d.call('freq', 5)[0] == E_ARGS
+    d.close()
+
+def t_mpu(blob):
+    raw = struct.pack('>hhhhhhh', 16384, -8192, 0, 0, 131, -131, 262)
+    d = Dev(blob, regs={0x75: bytes([0x68]), 0x3B: raw, 0x41: struct.pack('>h', 0)})
+    assert d.open({}) == 0 and any(w == bytes([0x6B, 0]) for _, w in d.i2c), d.i2c
+    assert d.call('read') == (0, [1000, -500, 0, 10, -10, 20])
+    assert d.call('temp') == (0, [3653])
+    d.close()
+
 TESTS = {'lcd1602': t_lcd, 'bme280': t_bme, 'ssd1306': t_oled, 'st7789': t_tft,
-         'aht20': t_aht, 'bh1750': t_bh, 'ds3231': t_rtc, 'ads1115': t_ads}
+         'aht20': t_aht, 'bh1750': t_bh, 'ds3231': t_rtc, 'ads1115': t_ads,
+         'sht31': t_sht, 'ina219': t_ina, 'pcf8574': t_pcf, 'pca9685': t_pca, 'mpu6050': t_mpu}
 
 if __name__ == '__main__':
     srcdir = sys.argv[1] if len(sys.argv) > 1 else None

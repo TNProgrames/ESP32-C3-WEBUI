@@ -8,7 +8,7 @@ export const en = {
   'درايفرات': 'Drivers',
   'تم الحفظ — يُعاد تشغيل الجهاز لتطبيق الاسم المحلي...': 'Saved — the device is restarting to apply the local name...',
   'يبقى لأن تطبيقًا آخر يستعمله': 'Kept because another app uses it',
-  'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'لا توجد تطبيقات (اضغط 🔄)': 'No apps (press 🔄)',
+  'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'تطبيق': 'apps', 'صفحة': 'page', 'لا توجد تطبيقات (اضغط 🔄)': 'No apps (press 🔄)',
   'مثبّت': 'Installed', 'صفحة + canvas': 'Page + canvas', 'درايفر': 'driver', 'حذف التطبيق': 'Delete app', 'تم الحذف': 'Deleted', 'تعذر الحذف': 'Could not delete', 'الدرايفرات': 'Drivers', 'الإعدادات': 'Settings',
 
   'الاسم المحلي: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، دون شرطة في الأول أو الآخر': 'Local name: lowercase letters, digits and hyphen only, no leading/trailing hyphen',

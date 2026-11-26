@@ -7,7 +7,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "61d16166d976e753952c903e14c19ca7cf7219211ef56d2d0f3de7a3b611cd9e",
+      "sha256": "44b91c9ec2df17c16aee16b42a4e9fda52e1aea5a9f8e0fd554d7eee0ed3d753",
       "file": "ads1115.drv",
       "info": "ADS1115 16-bit ADC (I2C)",
       "methods": [
@@ -27,7 +27,7 @@
       "api": 2,
       "size": 1752,
       "mem": 1580,
-      "sha256": "6ba10fa8c5e8e009b259125134c4d957495628047b7a70decaba13238df04cf3",
+      "sha256": "61a0e42b93a0d04710ae0ab6fcf385973a256a7efafbb4c007dd24f3256bafad",
       "file": "aht20.drv",
       "info": "AHT20 temp/hum (I2C)",
       "methods": [
@@ -47,7 +47,7 @@
       "api": 2,
       "size": 1608,
       "mem": 1436,
-      "sha256": "e0d4d0073295fe0b7fc89fb9aac01e2017466cc604a8b82d4e69fc61f3088b24",
+      "sha256": "3079bc433bee10cbf1f3ec234f22a111348d5c1d03d86f984cb7a0001992c28f",
       "file": "bh1750.drv",
       "info": "BH1750 light sensor (I2C)",
       "methods": [
@@ -67,7 +67,7 @@
       "api": 2,
       "size": 3672,
       "mem": 3488,
-      "sha256": "acc637d010ac039d6d52443c1d0a079dbace34852838bb2213c14170e1c7be7d",
+      "sha256": "7c0eca308a194b2ec237add63c617a3efc9e1c1ca9e6cc299975445ce241a960",
       "file": "bme280.drv",
       "info": "BME280/BMP280 temp/press/hum (I2C)",
       "methods": [
@@ -91,7 +91,7 @@
       "api": 2,
       "size": 2240,
       "mem": 2056,
-      "sha256": "a7abc45dd676f0d979da98531aa77f499d99e2ad8ebe22704e17bd765d4f9bef",
+      "sha256": "7a209adbd9a7a18af07c721914b6fe08905046e7d43a61e1acd0c55e11b46ae6",
       "file": "ds3231.drv",
       "info": "DS3231 RTC (I2C)",
       "methods": [
@@ -110,12 +110,28 @@
       ]
     },
     {
+      "name": "ina219",
+      "version": "1.0",
+      "api": 2,
+      "size": 1568,
+      "mem": 1408,
+      "sha256": "0a3d32f1dca5891084c88a0e4df0c97cc174dc1db93628728bb744d6aa380d48",
+      "file": "ina219.drv",
+      "info": "INA219 current/power (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        }
+      ]
+    },
+    {
       "name": "lcd1602",
       "version": "1.0",
       "api": 2,
       "size": 2576,
       "mem": 2380,
-      "sha256": "ac571ede610dcd76f8daa3bb9941266e77e5083b9ea243706a918e88115b6e2a",
+      "sha256": "c83b06488709287faa9e832c9e38a04f9f9e2bc0738dc7fb3786a4628a89664b",
       "file": "lcd1602.drv",
       "info": "HD44780 16x2 via PCF8574 (I2C)",
       "methods": [
@@ -138,12 +154,108 @@
       ]
     },
     {
+      "name": "mpu6050",
+      "version": "1.0",
+      "api": 2,
+      "size": 1760,
+      "mem": 1588,
+      "sha256": "af474bcb568aa9f2f4156559a9cc86b3bdf3e7197fe69588d5a644c2e6ba378a",
+      "file": "mpu6050.drv",
+      "info": "MPU6050 accel/gyro (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "temp",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "name": "pca9685",
+      "version": "1.0",
+      "api": 2,
+      "size": 2304,
+      "mem": 2108,
+      "sha256": "ebef51f887efa04a23d9a3a79502755e90011963bf3f863bd8ecf4e298864a8d",
+      "file": "pca9685.drv",
+      "info": "PCA9685 16-ch PWM/servo (I2C)",
+      "methods": [
+        {
+          "name": "freq",
+          "sig": "i"
+        },
+        {
+          "name": "pwm",
+          "sig": "ii"
+        },
+        {
+          "name": "servo",
+          "sig": "ii"
+        },
+        {
+          "name": "off",
+          "sig": "i"
+        }
+      ]
+    },
+    {
+      "name": "pcf8574",
+      "version": "1.0",
+      "api": 2,
+      "size": 1884,
+      "mem": 1688,
+      "sha256": "2889539464ddd0cb93e76699c23edf22997e6fd16a425cef11ccd6115b73aa62",
+      "file": "pcf8574.drv",
+      "info": "PCF8574 8-bit I/O expander (I2C)",
+      "methods": [
+        {
+          "name": "write",
+          "sig": "i"
+        },
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "pin",
+          "sig": "ib"
+        },
+        {
+          "name": "toggle",
+          "sig": "i"
+        }
+      ]
+    },
+    {
+      "name": "sht31",
+      "version": "1.0",
+      "api": 2,
+      "size": 1736,
+      "mem": 1564,
+      "sha256": "4aef6a9e270b5bbbba3d28aed2665501f96eddd2f8fd60f448964015e6db4093",
+      "file": "sht31.drv",
+      "info": "SHT3x temp/hum (I2C)",
+      "methods": [
+        {
+          "name": "read",
+          "sig": ""
+        },
+        {
+          "name": "reset",
+          "sig": ""
+        }
+      ]
+    },
+    {
       "name": "ssd1306",
       "version": "1.0",
       "api": 2,
       "size": 6268,
       "mem": 6000,
-      "sha256": "b5a6536d8529bdf0185e375f9119699136188522946e94ea8ac63826b72b9f82",
+      "sha256": "5e6dd4820a9a1cd8b7286450b9ecc4f37fea07c4a18c085e5cfa880393ec2339",
       "file": "ssd1306.drv",
       "info": "SSD1306/SH1106 OLED 128x64 (I2C)",
       "methods": [
@@ -195,7 +307,7 @@
       "api": 2,
       "size": 5084,
       "mem": 4864,
-      "sha256": "daa367575701f36d315c5997dcb0f1fc636a2d4ba1710371c62f9cc615f9a362",
+      "sha256": "accf02fc2d6517bcc139dec44d4dd7402feb8cbe6f81ba079acc1da5113d4cd9",
       "file": "st7789.drv",
       "info": "ST7789 color TFT strip renderer (SPI)",
       "methods": [
@@ -227,6 +339,18 @@
     }
   ],
   "apps": [
+    {
+      "name": "adc_meter",
+      "title": "فولتميتر ADC",
+      "desc": "قراءة جهد 4 مداخل تماثلية GPIO0–3 بالمللي فولت مع أشرطة.",
+      "icon": "📟",
+      "category": "sensors",
+      "driver": "",
+      "drivers": [],
+      "file": "adc_meter.lua",
+      "size": 350,
+      "sha256": "6d4606c6f112e5da144c866d81e0136fdbc7178d04dd4256431a5ea6355c3c10"
+    },
     {
       "name": "adc_scope",
       "title": "راسم إشارة ADS1115",
@@ -279,6 +403,35 @@
       "page_sha256": "3ff600d60d6fa4e88cc0e6d737f2bf0138e33b1be0905386982fb9b19c0feedc"
     },
     {
+      "name": "gpio_panel",
+      "title": "لوحة أرجل GPIO",
+      "desc": "مفاتيح لأربع أرجل خرج (4,5,6,7) مع حفظ الحالة.",
+      "icon": "🎛️",
+      "category": "tools",
+      "driver": "",
+      "drivers": [],
+      "file": "gpio_panel.lua",
+      "size": 367,
+      "sha256": "ae8b15c7bca7518c7a862e3e61b4d022bab6ad2e3331cc2b75d85965b3fecfa1"
+    },
+    {
+      "name": "io_expander",
+      "title": "موسّع أرجل PCF8574",
+      "desc": "8 أرجل إضافية: مفاتيح تبديل لكل رجل مع عرض الحالة الفعلية.",
+      "icon": "🔘",
+      "category": "tools",
+      "driver": "pcf8574",
+      "drivers": [
+        "pcf8574"
+      ],
+      "file": "io_expander.lua",
+      "size": 759,
+      "sha256": "776ae22b8beb5cc015daaf236ab453ba0161011262c5d393d1cc92cea97e6ff6",
+      "page_file": "io_expander.html",
+      "page_size": 2063,
+      "page_sha256": "322d250e75de1f307f333a308f31926300f3e49dacf9441cfd3c8afc28374d9a"
+    },
+    {
       "name": "lcd_clock",
       "title": "ساعة على LCD1602",
       "desc": "تعرض زمن تشغيل الجهاز على شاشة حروف 16×2 (I2C، عنوان 0x27).",
@@ -324,6 +477,35 @@
       "sha256": "ee3aec701cc6b93f82e0f77c20515cbdfd55ab3144f16bc42104dfb8afd6d766"
     },
     {
+      "name": "power_meter",
+      "title": "قياس الطاقة INA219",
+      "desc": "جهد وتيار وقدرة مع عدّاد طاقة mWh ورسم حيّ.",
+      "icon": "⚡",
+      "category": "sensors",
+      "driver": "ina219",
+      "drivers": [
+        "ina219"
+      ],
+      "file": "power_meter.lua",
+      "size": 737,
+      "sha256": "60361291cb49e9b7c351f97ca27db8b01e260950d93b738aaf7d5f96d7edf944",
+      "page_file": "power_meter.html",
+      "page_size": 2467,
+      "page_sha256": "820bd0f44243550b08d90191ad70e0d1c1d7cebeb216c5ecad5e52a1acaf8c46"
+    },
+    {
+      "name": "pwm_fader",
+      "title": "خافت PWM",
+      "desc": "منزلق سطوع وتردد لرجل GPIO5 (LED أو مروحة).",
+      "icon": "🌗",
+      "category": "tools",
+      "driver": "",
+      "drivers": [],
+      "file": "pwm_fader.lua",
+      "size": 445,
+      "sha256": "3c726df51988f744e9465dfcfde3c156b0adde268802d4224fd890edf785468b"
+    },
+    {
       "name": "rtc_clock",
       "title": "ساعة DS3231",
       "desc": "ساعة تماثلية على canvas مع التاريخ والحرارة، وزر لضبط الوقت من المتصفح.",
@@ -339,6 +521,81 @@
       "page_file": "rtc_clock.html",
       "page_size": 3512,
       "page_sha256": "392a7261702b1948fab4d0861d960a9b559e81e37ed1051105e70043a3bc7a0b"
+    },
+    {
+      "name": "servo_ctrl",
+      "title": "تحكم سيرفو PCA9685",
+      "desc": "4 مفاصل سيرفو بمنزلقات زاوية 0–180° ومنتصف سريع.",
+      "icon": "🦾",
+      "category": "tools",
+      "driver": "pca9685",
+      "drivers": [
+        "pca9685"
+      ],
+      "file": "servo_ctrl.lua",
+      "size": 727,
+      "sha256": "d2173115af1f5fcf0b9bd56b2b39c0610f62d5a317cb2f8f985eea95a976c09a",
+      "page_file": "servo_ctrl.html",
+      "page_size": 2443,
+      "page_sha256": "d6c9e5b8fc18ae7757e2dc45821d53cb36abaf65f604b74f4a276465d68987dd"
+    },
+    {
+      "name": "sht_monitor",
+      "title": "مراقب SHT31 + نقطة الندى",
+      "desc": "حرارة ورطوبة عالية الدقة مع حساب نقطة الندى ورسم حيّ.",
+      "icon": "💧",
+      "category": "sensors",
+      "driver": "sht31",
+      "drivers": [
+        "sht31"
+      ],
+      "file": "sht_monitor.lua",
+      "size": 626,
+      "sha256": "28e6b962f5e02834c14a244b4d822a90c87ac281317b67a195e3fd7b99edd736",
+      "page_file": "sht_monitor.html",
+      "page_size": 2511,
+      "page_sha256": "3fa21d76aa23d3139277d1299d7fa6c60b9d45dc564645f14088dc835e7e1d6b"
+    },
+    {
+      "name": "stopwatch",
+      "title": "ساعة إيقاف",
+      "desc": "ساعة إيقاف مع تسجيل لفّات (Lap).",
+      "icon": "⏱️",
+      "category": "time",
+      "driver": "",
+      "drivers": [],
+      "file": "stopwatch.lua",
+      "size": 874,
+      "sha256": "b481a180489c920a44618b9bbd9197516ff5c7274e2fb99f116a257baadbc703"
+    },
+    {
+      "name": "sys_monitor",
+      "title": "مراقب النظام",
+      "desc": "الذاكرة الحرة وزمن التشغيل وإصدار النظام مباشرة.",
+      "icon": "🖥️",
+      "category": "tools",
+      "driver": "",
+      "drivers": [],
+      "file": "sys_monitor.lua",
+      "size": 466,
+      "sha256": "c9c993cd8af1fe07b78190d8d40285dcd3aa4200642036117bc4c024c1e6744b"
+    },
+    {
+      "name": "tilt_level",
+      "title": "ميزان ميلان MPU6050",
+      "desc": "فقاعة ميزان على canvas وزوايا الميل مع معايرة الصفر.",
+      "icon": "🎯",
+      "category": "sensors",
+      "driver": "mpu6050",
+      "drivers": [
+        "mpu6050"
+      ],
+      "file": "tilt_level.lua",
+      "size": 612,
+      "sha256": "ab7219df579455696b55cacaf5a79c22752d5e86e2617b4594caaf4f4c2549f6",
+      "page_file": "tilt_level.html",
+      "page_size": 2955,
+      "page_sha256": "f0685cb674a072a8985adb7545f760859dfb5a2596f85f62039f99ffacab8e80"
     }
   ]
 }

@@ -114,6 +114,11 @@ lcd:close()                                               -- اختياري: ي�
 | `bh1750` | `read()` ← `lux_x10, raw` · `info()` | I2C (0x23/0x5C) |
 | `ds3231` | `read()` ← `y,mo,d,h,mi,s` · `set(y,mo,d,h,mi,s)` · `temp()` | I2C (0x68) |
 | `ads1115` | `read(ch)` ← `mv, raw` · `gain(g)` (cfg: `gain`) | I2C (0x48) |
+| `sht31` | `read()` ← `temp_x100, hum_x100` (مع CRC) · `reset()` | I2C (0x44/0x45) |
+| `ina219` | `read()` ← `bus_mv, current_ma, power_mw` (cfg: `shunt_mohm`) | I2C (0x40) |
+| `pcf8574` | `write(b)` · `read()` · `pin(n,on)` · `toggle(n)` | I2C (0x20) |
+| `pca9685` | `freq(hz)` · `pwm(ch,0..4095)` · `servo(ch,0..180)` · `off(ch)` | I2C (0x40) |
+| `mpu6050` | `read()` ← `ax,ay,az (mg), gx,gy,gz (0.1°/s)` · `temp()` | I2C (0x68) |
 | `st7789` | `clear(c)` `pixel` `rect` `text(x,y,s,fg,bg)` `backlight` `invert` | SPI (`spi.begin` أولًا) |
 
 كلها تُختبر في CI داخل محاكي RV32IM (`tools/drv/test_drivers.py`) — لم تُجرَّب على العتاد بعد.
@@ -148,4 +153,4 @@ lcd:close()                                               -- اختياري: ي�
 - الصفحة HTML/canvas (≤24KB) تتحكم بعلب div وتتواصل مع السكريبت عبر `esp.on / esp.send` فقط (انظر `ui.md`).
 - `build_index.py` يضيفها إلى `index.json` (`apps[]`: `file, page_file, drivers, category, sha256, page_sha256`).
 - التثبيت من الواجهة يضع: `/scripts/<name>.lua` و`/ui/<name>.html` و`/scripts/<name>.page` ويثبّت الدرايفرات الناقصة.
-- المتوفر: `aht_dash` `light_meter` `rtc_clock` `adc_scope` `bme_monitor` (بصفحات) و`lcd_clock` `oled_hello`.
+- المتوفر: `aht_dash` `light_meter` `rtc_clock` `adc_scope` `bme_monitor` (بصفحات) و`lcd_clock` `oled_hello`، وبالدرايفرات الجديدة: `sht_monitor` `power_meter` `io_expander` `servo_ctrl` `tilt_level` (بصفحات)، وتطبيقات Lua فقط بلا درايفر: `gpio_panel` `pwm_fader` `adc_meter` `stopwatch` `sys_monitor`. قائمة المتجر مقسّمة إلى صفحات (5 تطبيقات لكل صفحة).
