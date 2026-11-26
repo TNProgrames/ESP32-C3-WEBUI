@@ -61,7 +61,7 @@ export const en = {
   'تعذر بدء إعادة الضبط (تحقق من رقم PIN في الإعدادات)': 'Could not start the reset (check the PIN number in settings)',
   // Dashboard
   'استخدام الموارد': 'Resource usage', 'الذاكرة (RAM)': 'Memory (RAM)', 'التخزين': 'Storage',
-  'الشبكة': 'Network', 'الإصدار': 'Version', 'مدة التشغيل': 'Uptime', 'الإشارة': 'Signal',
+  'الشبكة': 'Network', 'الإصدار': 'Version', 'مدة التشغيل': 'Uptime', 'حرارة المعالج': 'CPU temp', 'الإشارة': 'Signal',
   'لا توجد بيانات (قد يكون الواي فاي قيد الضبط)': 'No data (WiFi may be reconfiguring)',
   'إعادة تشغيل الجهاز': 'Restart device', 'هل تريد إعادة تشغيل الجهاز؟': 'Restart the device?',
   'يُعاد تشغيل الجهاز، سجّل الدخول من جديد...': 'Restarting, sign in again...',

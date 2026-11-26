@@ -7,6 +7,7 @@
   let storage = $state(0);
   let version = $state('');
   let uptime = $state(0);
+  let temp = $state(null);
   let net = $state(null);
   let msg = $state('');
 
@@ -22,6 +23,7 @@
       storage = parseFloat(u.StorageUsage) || 0;
       version = u.Version || '';
       uptime = u.Uptime || 0;
+      temp = typeof u.Temp === 'number' ? u.Temp : null;
     } catch {}
     try { net = await api('/settings/get_stat'); } catch { net = null; }
   }
@@ -55,6 +57,7 @@
   <div class="row" style="gap:18px;font-size:13px">
     <span>{t('الإصدار')}: <b>{version || '-'}</b></span>
     <span>{t('مدة التشغيل')}: <b>{fmt(uptime)}</b></span>
+    {#if temp !== null}<span>🌡️ {t('حرارة المعالج')}: <b style={temp > 70 ? 'color:#e55' : ''}>{temp.toFixed(1)}°C</b></span>{/if}
   </div>
   {#if role === 'admin'}
     <div style="margin-top:14px"><button class="btn ghost" onclick={restart}>🔁 {t('إعادة تشغيل الجهاز')}</button></div>

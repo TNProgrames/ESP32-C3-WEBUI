@@ -850,7 +850,7 @@ void setupServerWeb() {
     if (!isAnyToken(request)) { request->send(401); return; }
     char r[16], s[16], res[192];
     RamUsage(r, 16); StorageUsage(s, 16);
-    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu}", r, s, FW_VERSION, (unsigned long)uptimeSec());
+    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu,\"Temp\":%.1f}", r, s, FW_VERSION, (unsigned long)uptimeSec(), (double)temperatureRead());
     request->send(200, "application/json", res);
   });
 
