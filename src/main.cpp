@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>  // Use Version 7.x
 #include <Update.h>
 #include <esp_timer.h>
+#include <esp_sleep.h>
+#include <driver/rtc_io.h>
 #include <stdarg.h>
 #include "lua_engine.h"
 #include "drv_loader.h"
@@ -36,6 +38,45 @@ char Admin_Token[33] = "";
 char User_Token[33] = "";
 // --- WiFi is Working 
 bool wifiIsWorking = false;
+// --- النوم العميق (deep sleep): يُنفَّذ مؤجلًا كي يصل ردّ HTTP وتُسجَّل الرسائل ---
+static volatile uint32_t sleepAt = 0;
+static uint32_t sleepSecs = 0, sleepMask = 0;
+static int sleepLevel = 1;
+// secs: مؤقت الاستيقاظ (0 = بلا مؤقت) · mask: بتّات الأرجل 0..5 (RTC) · level: 1 عالٍ / 0 منخفض. يعيد false عند معاملات غير صالحة
+bool requestDeepSleep(uint32_t secs, uint32_t mask, int level) {
+  if ((mask & ~0x3Fu) || secs > 30UL * 86400UL || (secs == 0 && mask == 0)) return false;
+  sleepSecs = secs; sleepMask = mask; sleepLevel = level ? 1 : 0;
+  sleepAt = millis() + 800; if (!sleepAt) sleepAt = 1;
+  logPrintf("Deep sleep in 0.8s (timer=%us pins=0x%02x level=%d)\n", (unsigned)secs, (unsigned)mask, sleepLevel);
+  return true;
+}
+// سبب الاستيقاظ: "timer" أو "gpio" أو "reset" (إقلاع عادي)، وpin = رقم الرجل أو -1
+const char* wakeReason(int* pin) {
+  *pin = -1;
+  esp_sleep_wakeup_cause_t c = esp_sleep_get_wakeup_cause();
+  if (c == ESP_SLEEP_WAKEUP_TIMER) return "timer";
+  if (c == ESP_SLEEP_WAKEUP_GPIO) {
+    uint64_t m = esp_sleep_get_gpio_wakeup_status();
+    for (int i = 0; i < 6; i++) if (m & (1ULL << i)) { *pin = i; break; }
+    return "gpio";
+  }
+  return "reset";
+}
+static void doDeepSleep() {
+  luaeng_stop_all();
+  WiFi.disconnect(true); WiFi.mode(WIFI_OFF);
+  if (sleepSecs) esp_sleep_enable_timer_wakeup((uint64_t)sleepSecs * 1000000ULL);
+  if (sleepMask) {
+    for (int i = 0; i < 6; i++) if (sleepMask & (1u << i)) {
+      rtc_gpio_init((gpio_num_t)i); rtc_gpio_set_direction((gpio_num_t)i, RTC_GPIO_MODE_INPUT_ONLY);
+      if (sleepLevel) { rtc_gpio_pullup_dis((gpio_num_t)i); rtc_gpio_pulldown_en((gpio_num_t)i); }
+      else { rtc_gpio_pulldown_dis((gpio_num_t)i); rtc_gpio_pullup_en((gpio_num_t)i); }
+    }
+    esp_deep_sleep_enable_gpio_wakeup(sleepMask, sleepLevel ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW);
+  }
+  esp_deep_sleep_start();
+}
+
 volatile uint32_t restartAt = 0;          // إعادة تشغيل مؤجلة (ms) كي يصل ردّ HTTP أولاً
 volatile bool mdnsApplyPending = false;  // إعادة تشغيل mDNS داخل loop() لا داخل callback
 volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
@@ -848,9 +889,10 @@ void setupServerWeb() {
 
   server.on("/hdusage", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAnyToken(request)) { request->send(401); return; }
-    char r[16], s[16], res[192];
+    char r[16], s[16], res[256];
     RamUsage(r, 16); StorageUsage(s, 16);
-    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu,\"Temp\":%.1f}", r, s, FW_VERSION, (unsigned long)uptimeSec(), (double)temperatureRead());
+    int wp; const char* wr = wakeReason(&wp);
+    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu,\"Temp\":%.1f,\"Wake\":\"%s\",\"WakePin\":%d}", r, s, FW_VERSION, (unsigned long)uptimeSec(), (double)temperatureRead(), wr, wp);
     request->send(200, "application/json", res);
   });
 
@@ -945,6 +987,25 @@ void setupServerWeb() {
     logPrintf("Restart requested\n");
     request->send(200, "application/json", "{\"ok\":true}");
     restartPending = true;
+  });
+
+  // --- النوم العميق (admin): /settings/sleep?secs=60&pins=0,3&level=1 ---
+  server.on("/settings/sleep", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!isAdminToken(request)) { request->send(401); return; }
+    uint32_t secs = request->hasParam("secs") ? (uint32_t)request->getParam("secs")->value().toInt() : 0;
+    int level = request->hasParam("level") ? request->getParam("level")->value().toInt() : 1;
+    uint32_t mask = 0;
+    if (request->hasParam("pins")) {
+      String pins = request->getParam("pins")->value();
+      for (int i = 0; i < (int)pins.length(); ) {
+        int j = pins.indexOf(',', i); if (j < 0) j = pins.length();
+        int n = pins.substring(i, j).toInt();
+        if (j > i && n >= 0 && n <= 5) mask |= 1u << n;
+        i = j + 1;
+      }
+    }
+    if (!requestDeepSleep(secs, mask, level)) { request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return; }
+    request->send(200, "application/json", "{\"ok\":true}");
   });
 
   // --- الطرفية (admin): قراءة السجل وإرسال الأوامر ---
@@ -1145,6 +1206,7 @@ void setup() {
 }
 
 void loop() {
+  if (sleepAt && (int32_t)(millis() - sleepAt) >= 0) { sleepAt = 0; doDeepSleep(); }
   if (restartAt && (int32_t)(millis() - restartAt) >= 0) { restartAt = 0; ESP.restart(); }
   if (mdnsApplyPending) { mdnsApplyPending = false; loadHost(); startMdns(); }
   if (wifiApplyPending) {

@@ -8,6 +8,10 @@
   let version = $state('');
   let uptime = $state(0);
   let temp = $state(null);
+  let wake = $state('');
+  let slSecs = $state(60);
+  let slPins = $state([]);
+  let slLevel = $state(1);
   let net = $state(null);
   let msg = $state('');
 
@@ -24,8 +28,18 @@
       version = u.Version || '';
       uptime = u.Uptime || 0;
       temp = typeof u.Temp === 'number' ? u.Temp : null;
+      wake = u.Wake === 'timer' ? t('مؤقت') : u.Wake === 'gpio' ? t('رجل') + ' GPIO' + u.WakePin : t('إقلاع عادي');
     } catch {}
     try { net = await api('/settings/get_stat'); } catch { net = null; }
+  }
+
+  async function sleepNow() {
+    if (!slPins.length && !(slSecs > 0)) { msg = t('حدّد مؤقتًا أو رجل استيقاظ'); return; }
+    if (!confirm(t('سيدخل الجهاز النوم العميق وينقطع الاتصال. متابعة؟'))) return;
+    try {
+      await api(`/settings/sleep?secs=${slSecs > 0 ? Math.floor(slSecs) : 0}&pins=${slPins.join(',')}&level=${slLevel}`, {});
+      msg = t('الجهاز في النوم العميق. يستيقظ بالمؤقت أو رجل الاستيقاظ أو زر RESET.');
+    } catch { msg = t('تعذّر'); }
   }
 
   async function restart() {
@@ -59,7 +73,24 @@
     <span>{t('مدة التشغيل')}: <b>{fmt(uptime)}</b></span>
     {#if temp !== null}<span>🌡️ {t('حرارة المعالج')}: <b style={temp > 70 ? 'color:#e55' : ''}>{temp.toFixed(1)}°C</b></span>{/if}
   </div>
+  <div style="font-size:13px;margin-top:6px">⏰ {t('سبب آخر إقلاع')}: <b>{wake || '-'}</b></div>
   {#if role === 'admin'}
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <b style="font-size:13px">😴 {t('النوم العميق')}</b>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;font-size:13px">
+        <label>{t('مؤقت (ثانية، 0 = بلا)')} <input type="number" min="0" max="2592000" style="width:90px" bind:value={slSecs} /></label>
+        <label>{t('مستوى الاستيقاظ')}
+          <select bind:value={slLevel}><option value={1}>{t('عالٍ')} (1)</option><option value={0}>{t('منخفض')} (0)</option></select>
+        </label>
+      </div>
+      <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap;font-size:13px">
+        <span style="color:var(--muted)">{t('أرجل الاستيقاظ')}:</span>
+        {#each [0, 1, 2, 3, 4, 5] as n}
+          <label><input type="checkbox" value={n} bind:group={slPins} /> {n}</label>
+        {/each}
+      </div>
+      <button class="btn ghost" style="margin-top:8px" onclick={sleepNow}>😴 {t('نوم عميق الآن')}</button>
+    </div>
     <div style="margin-top:14px"><button class="btn ghost" onclick={restart}>🔁 {t('إعادة تشغيل الجهاز')}</button></div>
   {/if}
   <div class="msg ok">{msg}</div>

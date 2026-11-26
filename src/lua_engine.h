@@ -30,3 +30,5 @@ bool luaeng_ui_event(int panel, const char* name, const char* valJson);
 // يُنفَّذ في main.cpp
 const char* luaeng_fw_version();
 void logPrintf(const char* fmt, ...);
+bool requestDeepSleep(uint32_t secs, uint32_t mask, int level);   // نوم عميق مؤجل 0.8s
+const char* wakeReason(int* pin);                                  // "timer" | "gpio" | "reset"

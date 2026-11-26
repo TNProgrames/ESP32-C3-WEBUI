@@ -260,6 +260,29 @@ static int l_sys_uptime(lua_State* L) { lua_pushinteger(L, (lua_Integer)(millis(
 static int l_sys_version(lua_State* L) { lua_pushstring(L, luaeng_fw_version()); return 1; }
 static int l_sys_millis(lua_State* L) { lua_pushinteger(L, (lua_Integer)millis()); return 1; }
 static int l_sys_temp(lua_State* L) { lua_pushnumber(L, temperatureRead()); return 1; }
+// sys.deep_sleep(seconds, {pins...}, level): يتوقف السكريبت والجهاز بعد لحظات. level: 1 (افتراضي) استيقاظ بجهد عالٍ، 0 منخفض. أرجل الاستيقاض 0..5 فقط
+static int l_sys_deep_sleep(lua_State* L) {
+  lua_Integer secs = luaL_optinteger(L, 1, 0);
+  uint32_t mask = 0;
+  if (lua_istable(L, 2)) {
+    int n = (int)lua_rawlen(L, 2);
+    for (int i = 1; i <= n; i++) {
+      lua_rawgeti(L, 2, i);
+      lua_Integer p = luaL_optinteger(L, -1, -1); lua_pop(L, 1);
+      if (p < 0 || p > 5) return luaL_error(L, "wake pin must be 0..5");
+      mask |= 1u << p;
+    }
+  }
+  int level = (int)luaL_optinteger(L, 3, 1);
+  if (secs < 0 || !requestDeepSleep((uint32_t)secs, mask, level)) return luaL_error(L, "deep_sleep: need seconds (<=30d) and/or wake pins");
+  return 0;
+}
+// sys.wake_reason() -> "timer" | "gpio" | "reset", pin|nil
+static int l_sys_wake_reason(lua_State* L) {
+  int pin; lua_pushstring(L, wakeReason(&pin));
+  if (pin >= 0) { lua_pushinteger(L, pin); return 2; }
+  return 1;
+}
 static int l_sys_heap(lua_State* L) { lua_pushinteger(L, ESP.getFreeHeap()); return 1; }
 
 static int addTimer(lua_State* L, bool repeat) {
@@ -656,7 +679,7 @@ static void startScript(const char* name, const char* code, size_t len) {
   static const luaL_Reg adcF[]  = { {"read", l_adc_read}, {"mv", l_adc_mv}, {"read_mv", l_adc_mv}, {"atten", l_adc_atten}, {NULL, NULL} };
   static const luaL_Reg pwmF[]  = { {"set", l_pwm_set}, {"duty", l_pwm_duty}, {"stop", l_pwm_stop}, {NULL, NULL} };
   static const luaL_Reg timF[]  = { {"every", l_timer_every}, {"after", l_timer_after}, {"cancel", l_timer_cancel}, {NULL, NULL} };
-  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"temp", l_sys_temp}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
+  static const luaL_Reg sysF[]  = { {"millis", l_sys_millis}, {"heap", l_sys_heap}, {"temp", l_sys_temp}, {"deep_sleep", l_sys_deep_sleep}, {"wake_reason", l_sys_wake_reason}, {"uptime", l_sys_uptime}, {"version", l_sys_version}, {NULL, NULL} };
   static const luaL_Reg uiF[]   = { {"_new", l_ui_new}, {"_w", l_ui_w}, {"_set", l_ui_set}, {"_page", l_ui_page}, {"_emit", l_ui_emit}, {NULL, NULL} };
   static const luaL_Reg stoF[]  = { {"get", l_storage_get}, {"set", l_storage_set}, {"remove", l_storage_remove}, {"clear", l_storage_clear}, {NULL, NULL} };
   static const luaL_Reg busF[]  = { {"publish", l_bus_publish}, {"subscribe", l_bus_subscribe}, {"unsubscribe", l_bus_unsubscribe}, {NULL, NULL} };
