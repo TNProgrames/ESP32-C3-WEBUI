@@ -294,7 +294,7 @@
 
         async function renameItem(path) {
             const n = prompt(T("الاسم/المسار الجديد:"), path);
-            if (n) { await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`); loadFiles(currentPath); }
+            if (n) { await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`, 'POST'); loadFiles(currentPath); }
         }
 
         async function formatFS() {

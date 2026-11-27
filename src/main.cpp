@@ -32,7 +32,8 @@ char apwifipass[33] = "12345678";
 char hostname_[33] = "esp32";   // الاسم المحلي: <hostname>.local
 
 // --- Network Settings ---
-const char* access_key = "1234"; // مفتاح الوصول لصفحة الطوارئ /em
+char access_key[32] = "1234";     // مفتاح صفحة الطوارئ /em: الافتراضي 1234، ويمكن تغييره بملف /em_key (حتى 31 حرفًا)
+static char emSess[33] = "";      // رمز جلسة الطوارئ العشوائي (يُولَّد كل إقلاع) ويوضع في الكوكي بدل المفتاح نفسه
 
 // --- Token Store ---
 char Admin_Token[33] = "";
@@ -134,7 +135,10 @@ AsyncWebServer server(80);
 // الرمز الفارغ مرفوض دائماً (قبل أول تسجيل دخول يكون الرمز فارغاً)
 static bool tokenMatches(AsyncWebServerRequest *request, const char* stored) {
     if (stored[0] == '\0' || !request->hasHeader("User_Token")) return false;
-    return strcmp(stored, request->getHeader("User_Token")->value().c_str()) == 0;
+    const char* g = request->getHeader("User_Token")->value().c_str();
+    size_t n = strlen(stored); uint8_t diff = (uint8_t)(strlen(g) != n);
+    for (size_t i = 0; i < n; i++) diff |= (uint8_t)(stored[i] ^ g[i < strlen(g) ? i : 0]);   // مقارنة ثابتة الزمن
+    return diff == 0;
 }
 static bool isAdminToken(AsyncWebServerRequest *request) { return tokenMatches(request, Admin_Token); }
 static bool isAnyToken(AsyncWebServerRequest *request)   { return tokenMatches(request, Admin_Token) || tokenMatches(request, User_Token); }
@@ -264,7 +268,7 @@ static void cleanHost(char* h) {
   char o[33]; int n = 0;
   for (int i = 0; h[i] && n < 32; i++) { char c = (char)tolower((unsigned char)h[i]); if (isalnum((unsigned char)c) || (c == '-' && n > 0)) o[n++] = c; }
   while (n > 0 && o[n - 1] == '-') n--;
-  o[n] = 0; strcpy(h, n ? o : "esp32");
+  o[n] = 0; strlcpy(h, n ? o : "esp32", 33);
 }
 // الاسم المحلي = إعداد «المضيف المحلي» في تبويب الاتصال (مثل esp32.local)
 // قيود الاسم المحلي: 1–32 حرفًا من a-z و0-9 والشرطة، بلا شرطة في الأول أو الآخر (يُقبل لاحقة .local وتُحذف)
@@ -278,7 +282,7 @@ static bool validHost(String h) {
 static void loadHost() {
   char h[33] = "esp32.local"; getJson("/settings.json", "0_Obj.localhost", h, sizeof h);
   char* dot = strchr(h, '.'); if (dot) *dot = 0;          // نحتفظ بالجزء قبل أول نقطة
-  cleanHost(h); strcpy(hostname_, h);
+  cleanHost(h); strlcpy(hostname_, h, sizeof(hostname_));
 }
 static void startMdns() {
   MDNS.end();
@@ -395,30 +399,33 @@ void loadsetting() {
 }
 
 // --- Emergency Tools Helper ---
+static bool hasCookie(AsyncWebServerRequest *request, const char* name) {
+  if (!emSess[0] || !request->hasHeader("Cookie")) return false;
+  char want[64]; snprintf(want, sizeof(want), "%s=%s", name, emSess);
+  const char* c = request->header("Cookie").c_str();
+  size_t wl = strlen(want);
+  for (const char* p = c; (p = strstr(p, want)) != nullptr; p += wl)
+    if ((p == c || p[-1] == ' ' || p[-1] == ';') && (p[wl] == 0 || p[wl] == ';')) return true;
+  return false;
+}
 bool isAuthorizedEm(AsyncWebServerRequest *request) {
     if (request->hasParam("pass") && request->getParam("pass")->value() == access_key) return true;
-    if (request->hasHeader("Cookie")) {
-        String cookie = request->header("Cookie");
-        if (cookie.indexOf("session_key_em=" + String(access_key)) != -1) return true;
-    }
-    return false;
+    return hasCookie(request, "session_key_em");
 }
 
 bool isAuthorized(AsyncWebServerRequest *request) {
     if (isAdminToken(request)) return true;
-    if (request->hasHeader("Cookie")) {
-        String cookie = request->header("Cookie");
-        if (cookie.indexOf("session_key=" + String(access_key)) != -1) return true;
-    }
-    return false;
+    return hasCookie(request, "session_key");
 }
 
 void refreshSessionEm(AsyncWebServerResponse *response) {
-    response->addHeader("Set-Cookie", "session_key_em=" + String(access_key) + "; Max-Age=900; Path=/");
+    char c[96]; snprintf(c, sizeof(c), "session_key_em=%s; Max-Age=900; Path=/; SameSite=Strict", emSess);
+    response->addHeader("Set-Cookie", c);
 }
 
 void refreshSession(AsyncWebServerResponse *response) {
-    response->addHeader("Set-Cookie", "session_key=" + String(access_key) + "; Max-Age=900; Path=/");
+    char c[96]; snprintf(c, sizeof(c), "session_key=%s; Max-Age=900; Path=/; SameSite=Strict", emSess);
+    response->addHeader("Set-Cookie", c);
 }
 
 bool deleteRecursive(String path) {
@@ -656,7 +663,7 @@ void EmSetupAPI() {
         request->send(response);
     });
     
-    server.on("/api/rename", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/api/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
         String oldPath, newPath;
         if (!getPathParam(request, "old", oldPath) || !getPathParam(request, "new", newPath)) { request->send(400); return; }
@@ -1202,6 +1209,11 @@ void setupServerWeb() {
 void setup() {
   gpio_deep_sleep_hold_dis();                      // فكّ تثبيت الأرجل بعد الاستيقاظ من النوم العميق
   for (int i = 0; i < 6; i++) gpio_hold_dis((gpio_num_t)i);
+  generateToken(emSess, sizeof(emSess));
+  if (LittleFS.begin(true)) {                      // مفتاح الطوارئ المخصص (اختياري)
+    File kf = LittleFS.open("/em_key", "r");
+    if (kf) { String k = kf.readString(); k.trim(); if (k.length() >= 4 && k.length() < sizeof(access_key)) strlcpy(access_key, k.c_str(), sizeof(access_key)); kf.close(); }
+  }
   loadsetting();
   EmSetupAPI();
   setupServerWeb();
