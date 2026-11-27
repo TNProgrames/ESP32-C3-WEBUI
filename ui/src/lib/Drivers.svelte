@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { api, apiRaw, authHeaders } from '../api.js';
-  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, appDrivers, getMode, setMode } from '../drvstore.js';
+  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, appDrivers, DRV_MAX, getMode, setMode } from '../drvstore.js';
   import { t } from '../store.svelte.js';
   import AppCards from './AppCards.svelte';
   import { lab } from '../lab.svelte.js';
@@ -67,7 +67,25 @@
     msg = (await setMode(m)) ? t('تم تغيير الوضع وأُعيد تحميل الدرايفرات') : t('تعذر تغيير الوضع');
     busy = false; await loadMode(); refresh();
   }
+  // نافذة الأماكن: عند نقص خانات الدرايفرات يختار المستخدم ما يحذفه قبل التثبيت
+  let slotAsk = $state(null);       // { app, missing, free, need, pick: [] }
+  const usedBy = (d) => apps.filter((x) => myScripts.includes(x.name) && appDrivers(x).includes(d)).map((x) => x.title || x.name);
   async function getApp(a) {
+    const missing = appDrivers(a).filter((d) => !list.some((i) => i.name === d));
+    const free = Math.max(0, DRV_MAX - list.length);
+    if (missing.length > free) { slotAsk = { app: a, missing, free, need: missing.length - free, pick: [] }; return; }
+    await doInstall(a);
+  }
+  async function slotConfirm() {
+    const q = slotAsk; if (!q || q.pick.length < q.need) return;
+    slotAsk = null; busyApp = q.app.name; msg = '';
+    const fail = [];
+    for (const d of q.pick) { const r = await removeFromDevice(d); if (!r.ok) fail.push(d + ': ' + r.error); }
+    await refresh();
+    if (fail.length) { msg = t('تعذر الحذف') + ': ' + fail.join(' · '); busyApp = ''; return; }
+    await doInstall(q.app);
+  }
+  async function doInstall(a) {
     busyApp = a.name; msg = '';
     try {
       const r = await installApp(a, store, list, storeUrl);
@@ -126,6 +144,34 @@
   </div>
   {#if msg}<div style="margin-top:8px;font-size:13px">{msg}</div>{/if}
 </div>
+
+{#if slotAsk}
+  <div class="glass" style="border:1px solid var(--primary)">
+    <b>⚠️ {t('لا توجد أماكن كافية للدرايفرات')}</b>
+    <div style="font-size:13px;margin:6px 0">
+      {t('التطبيق')} <b>{slotAsk.app.title || slotAsk.app.name}</b> {t('يحتاج درايفرات جديدة')}: <b>{slotAsk.missing.join(', ')}</b>
+    </div>
+    <div class="row" style="gap:14px;font-size:13px;flex-wrap:wrap">
+      <span>{t('الأماكن الكلية')}: <b>{DRV_MAX}</b></span>
+      <span>{t('المستعملة')}: <b>{list.length}</b></span>
+      <span>{t('المتبقية')}: <b>{slotAsk.free}</b></span>
+      <span>{t('المطلوبة')}: <b>{slotAsk.missing.length}</b></span>
+      <span style="color:{slotAsk.pick.length >= slotAsk.need ? '#3c9' : '#e55'}">{t('اختر للحذف')}: <b>{slotAsk.pick.length}/{slotAsk.need}</b></span>
+    </div>
+    <div style="margin-top:8px;font-size:13px">
+      {#each list as d}
+        <label class="row" style="gap:8px;padding:4px 0;align-items:flex-start">
+          <input type="checkbox" value={d.name} bind:group={slotAsk.pick} />
+          <span><b>{d.name}</b>{#if usedBy(d.name).length} <span style="color:#e55;font-size:11px">⚠ {t('يستعمله')}: {usedBy(d.name).join(', ')}</span>{/if}</span>
+        </label>
+      {/each}
+    </div>
+    <div class="row" style="gap:6px;margin-top:8px">
+      <button class="btn" disabled={slotAsk.pick.length < slotAsk.need} onclick={slotConfirm}>🗑 {t('احذف وأكمل التثبيت')}</button>
+      <button class="btn ghost" onclick={() => (slotAsk = null)}>{t('إلغاء')}</button>
+    </div>
+  </div>
+{/if}
 
 {#if tab === 'apps'}
   <AppCards {apps} installed={list} scripts={myScripts} busyName={busyApp} msg={storeMsg}

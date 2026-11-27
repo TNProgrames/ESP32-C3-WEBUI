@@ -154,5 +154,6 @@ lcd:close()                                               -- اختياري: ي�
 التطبيق = `apps/<name>.lua` + `apps/<name>.json` (`title, desc, icon, category, driver|drivers, page`) + `apps/<name>.html` اختياري.
 - الصفحة HTML/canvas (≤24KB) تتحكم بعلب div وتتواصل مع السكريبت عبر `esp.on / esp.send` فقط (انظر `ui.md`).
 - `build_index.py` يضيفها إلى `index.json` (`apps[]`: `file, page_file, drivers, category, sha256, page_sha256`).
+- إن لم تكفِ خانات الدرايفرات (4 كحد أقصى) تظهر نافذة تعرض: الأماكن الكلية والمستعملة والمتبقية والمطلوبة، ويختار المستخدم ما يحذفه ثم يكتمل التثبيت.
 - التثبيت من الواجهة يضع: `/scripts/<name>.lua` و`/ui/<name>.html` و`/scripts/<name>.page` ويثبّت الدرايفرات الناقصة.
 - المتوفر: `aht_dash` `light_meter` `rtc_clock` `adc_scope` `bme_monitor` (بصفحات) و`lcd_clock` `oled_hello`، وبالدرايفرات الجديدة: `weather_station` (درايفران: sht31+bh1750) `sht_monitor` `power_meter` `io_expander` `servo_ctrl` `tilt_level` (بصفحات)، وتطبيقات Lua فقط بلا درايفر: `gpio_panel` `pwm_fader` `adc_meter` `stopwatch` `sys_monitor`. قائمة المتجر مقسّمة إلى صفحات (5 تطبيقات لكل صفحة).

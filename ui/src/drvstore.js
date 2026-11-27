@@ -4,6 +4,7 @@
 // التحقق الحاسم من التوقيع يتم على الجهاز (/drv/install)؛ فحص sha256 هنا اختياري لكشف التنزيل التالف مبكرًا.
 import { authHeaders } from './api.js';
 
+export const DRV_MAX = 4;   // أقصى عدد درايفرات مثبّتة (DRV_MAX_LOADED في الفيرموير)
 export const REPO = 'TNProgrames/ESP32-C3-WEBUI';
 export const DEFAULT_INDEX = `https://raw.githubusercontent.com/${REPO}/main/drivers/build/index.json`;
 
