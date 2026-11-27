@@ -3,3 +3,4 @@
 data/app/
 node_modules/
 ui/node_modules/
+__pycache__/
