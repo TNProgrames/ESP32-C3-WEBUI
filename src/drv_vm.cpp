@@ -47,12 +47,13 @@ uint32_t drv_vm_alloc(DrvVM* v, uint32_t n) {
   n = (n + 7) & ~7u;
   for (uint32_t o = v->heapOff; o + 8 <= v->heapEnd;) {
     uint32_t sz, used; memcpy(&sz, v->mem + o, 4); memcpy(&used, v->mem + o + 4, 4);
+    if (sz > v->heapEnd - o - 8) return 0;           // ترويسة تالفة (الدرايفر يكتب فيها): لا نثق بها
     if (!used) {
       // دمج الحرّات التالية
       for (;;) {
         uint32_t nx = o + 8 + sz; if (nx + 8 > v->heapEnd) break;
         uint32_t s2, u2; memcpy(&s2, v->mem + nx, 4); memcpy(&u2, v->mem + nx + 4, 4);
-        if (u2) break;
+        if (u2 || s2 > v->heapEnd - nx - 8) break;
         sz += 8 + s2; memcpy(v->mem + o, &sz, 4);
       }
       if (sz >= n) {
@@ -79,6 +80,7 @@ void drv_vm_free(DrvVM* v, uint32_t g) {
 // ---------- المفسّر ----------
 static inline int32_t sx(uint32_t v, int bits) { return (int32_t)(v << (32 - bits)) >> (32 - bits); }
 
+#define HOST_COST 4000u
 int drv_vm_call(DrvVM* v, uint32_t fn, const uint32_t* args, int nargs, uint32_t* ret) {
   uint32_t* x = v->x;
   memset(x, 0, sizeof(v->x));
@@ -93,6 +95,8 @@ int drv_vm_call(DrvVM* v, uint32_t fn, const uint32_t* args, int nargs, uint32_t
     if (po > imgLen - 4 || (pc & 3) || imgLen < 4) {
       if (pc == STOP_ADDR) { if (ret) *ret = x[10]; return 0; }
       if (pc > HOST_BASE && pc < HOST_BASE + 4u * DRV_VM_NHOST && !(pc & 3)) {
+        if (budget < HOST_COST) FAULT(-3);            // كل استدعاء مضيف يستهلك من الميزانية (يمنع الحلقة اللانهائية عليه)
+        budget -= HOST_COST;
         x[10] = v->host ? v->host(v, (int)((pc - HOST_BASE) / 4), &x[10]) : 0;
         pc = x[1]; continue;
       }

@@ -1265,7 +1265,14 @@ static void apiLog(const char* m) { logPrintf("[drv] %s\n", m ? m : ""); }
 static void* apiAlloc(size_t n) { return n && n <= 16384 ? malloc(n) : nullptr; }
 static void apiRelease(void* p) { free(p); }
 static uint32_t apiMillis() { return millis(); }
-static void apiDelayMs(uint32_t ms) { delay(ms > 200 ? 200 : ms); }
+// مجموع التأخير داخل استدعاء درايفر واحد محدود (3 ثوانٍ) كي لا يعلّق درايفر معيب المحرك
+static uint32_t g_delayLeft = 3000;
+static void apiDelayMs(uint32_t ms) {
+  if (ms > 200) ms = 200;
+  if (ms > g_delayLeft) ms = g_delayLeft;
+  g_delayLeft -= ms;
+  delay(ms);
+}
 static void apiDelayUs(uint32_t us) { delayMicroseconds(us > 10000 ? 10000 : us); }
 static int apiI2cWrite(uint8_t addr, const uint8_t* d, size_t n) {
   if (!apiBusReady()) return apiBus(7);
@@ -1406,7 +1413,7 @@ static int l_drv_open(lua_State* L) {
   uint32_t ctx = 0; int rc;
   {
     IoTimer t(s);
-    g_drvScript = s; g_drvErr = 0;
+    g_drvScript = s; g_drvErr = 0; g_delayLeft = 3000;
     rc = drv_vm_open(e, cfg, nc, &ctx);
     g_drvScript = nullptr;
   }
@@ -1430,7 +1437,8 @@ static int l_drv_call(lua_State* L) {
   Script* s = me(L);
   const int mi = (int)lua_tointeger(L, lua_upvalueindex(1));
   const DrvMethodInfo& m = h->e->ops.methods[mi];
-  int nargs = lua_gettop(L) - 1, total = (int)strlen(m.sig), need = 0;
+  int nargs = lua_gettop(L) - 1, total = (int)strnlen(m.sig, DRV_MAX_ARGS + 1), need = 0;   // sig في ذاكرة الدرايفر: لا نثق بطولها
+  if (total > DRV_MAX_ARGS) return failResult(L, "bad_args");
   for (const char* c = m.sig; *c; c++) if (islower((unsigned char)*c)) need++;
   if (nargs < need || nargs > total) return failResult(L, "bad_args");
   drv_val_t a[DRV_MAX_ARGS]; memset(a, 0, sizeof(a));
@@ -1449,7 +1457,7 @@ static int l_drv_call(lua_State* L) {
   drv_val_t r[DRV_MAX_ARGS]; int nr = 0, rc;
   {
     IoTimer t(s);
-    g_drvScript = s; g_drvErr = 0;
+    g_drvScript = s; g_delayLeft = 3000; g_drvErr = 0;
     rc = drv_vm_invoke(h->e, mi, h->ctx, a, nargs, r, &nr);
     g_drvScript = nullptr;
   }

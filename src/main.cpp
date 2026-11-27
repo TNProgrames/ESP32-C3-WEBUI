@@ -213,10 +213,15 @@ bool updateOrCreateJson(const char* filePath, const char* path, const char* newV
   }
   
   current.set(newValue);
-  File fileW = LittleFS.open(filePath, "w");
+  // كتابة ذرّية: ملف مؤقت ثم rename، فلا يفسد انقطاعُ الكهرباء users.json أو settings.json
+  String tmp = String(filePath) + ".tmp";
+  File fileW = LittleFS.open(tmp, "w");
   if (!fileW) return false;
-  serializeJsonPretty(doc, fileW);
+  size_t w = serializeJsonPretty(doc, fileW);
   fileW.close();
+  if (w == 0) { LittleFS.remove(tmp); return false; }
+  LittleFS.remove(filePath);
+  if (!LittleFS.rename(tmp, filePath)) { LittleFS.remove(tmp); return false; }
   return true;
 }
 
@@ -408,8 +413,14 @@ static bool hasCookie(AsyncWebServerRequest *request, const char* name) {
     if ((p == c || p[-1] == ' ' || p[-1] == ';') && (p[wl] == 0 || p[wl] == ';')) return true;
   return false;
 }
+static uint8_t emFails = 0;
+static uint32_t emLockUntil = 0;
+static bool emLocked() { return emLockUntil && (int32_t)(millis() - emLockUntil) < 0; }
 bool isAuthorizedEm(AsyncWebServerRequest *request) {
-    if (request->hasParam("pass") && request->getParam("pass")->value() == access_key) return true;
+    if (request->hasParam("pass") && !emLocked()) {            // قفل 60 ثانية بعد 5 محاولات خاطئة، لكل مسارات الطوارئ
+        if (request->getParam("pass")->value() == access_key) { emFails = 0; return true; }
+        if (++emFails >= 5) { emFails = 0; emLockUntil = millis() + 60000; if (!emLockUntil) emLockUntil = 1; }
+    }
     return hasCookie(request, "session_key_em");
 }
 
@@ -552,18 +563,13 @@ void EmSetupAPI() {
 
     // التحقق من مفتاح الطوارئ (مع قفل مؤقت بعد 5 محاولات خاطئة)
     server.on("/em/check", HTTP_GET, [](AsyncWebServerRequest *request) {
-        static uint8_t fails = 0;
-        static uint32_t lockUntil = 0;
-        uint32_t now = millis();
-        if (lockUntil && (int32_t)(now - lockUntil) < 0) { request->send(429); return; }
+        if (emLocked()) { request->send(429); return; }
         if (isAuthorizedEm(request) && request->hasParam("pass")) {
-            fails = 0; lockUntil = 0;
             AsyncWebServerResponse *response = request->beginResponse(200);
             refreshSessionEm(response);
             request->send(response);
             return;
         }
-        if (++fails >= 5) { fails = 0; lockUntil = now + 60000; }
         request->send(401);
     });
 
@@ -775,7 +781,7 @@ void setupServerWeb() {
             if (!*ss || strlen(ss) > 32 || strlen(pw) > 63 || (int)out.size() >= MAX_NETS) continue;
             JsonObject o = out.add<JsonObject>(); o["ssid"] = ss; o["pass"] = pw;
           }
-          File nf = LittleFS.open(NETS_FILE, "w"); if (nf) { serializeJson(nd, nf); nf.close(); }
+          File nf = LittleFS.open(String(NETS_FILE) + ".tmp", "w"); if (nf) { size_t w = serializeJson(nd, nf); nf.close(); if (w) { LittleFS.remove(NETS_FILE); LittleFS.rename(String(NETS_FILE) + ".tmp", NETS_FILE); } }
           doc["ssid"] = out.size() ? (const char*)(out[0]["ssid"] | "") : "";
           doc["pass"] = out.size() ? (const char*)(out[0]["pass"] | "") : "";
         }
@@ -921,12 +927,17 @@ void setupServerWeb() {
     restartPending = true;
   }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!index) {
+      if (!otaAllowed(request)) return;               // غير مخوّل: لا نمسّ حالة رفع جارٍ (المعالج النهائي يردّ 401)
       otaError[0] = 0;
       otaStarted = false;
-      if (!otaAllowed(request)) { strlcpy(otaError, "unauthorized", sizeof(otaError)); return; }
       bool fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
       if (!fs && (len == 0 || data[0] != 0xE9)) { strlcpy(otaError, "not a firmware image", sizeof(otaError)); return; }
-      if (fs) { LittleFS.end(); otaFsUnmounted = true; }
+      if (fs) {
+        LittleFS.end(); otaFsUnmounted = true;
+        request->onDisconnect([]() {                  // انقطع الرفع في المنتصف: أعد تركيب النظام
+          if (otaFsUnmounted) { if (Update.isRunning()) Update.abort(); LittleFS.begin(false); otaFsUnmounted = false; }
+        });
+      }
       if (!Update.begin(UPDATE_SIZE_UNKNOWN, fs ? U_SPIFFS : U_FLASH)) {
         strlcpy(otaError, Update.errorString(), sizeof(otaError));
         return;

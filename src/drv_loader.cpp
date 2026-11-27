@@ -85,7 +85,7 @@ static bool parse(const uint8_t* b, size_t len, Parsed* o, String* err) {
   const uint8_t* rel = b + HDR + o->imgLen;
   for (uint32_t i = 0; i < o->nrel; i++) {
     uint32_t off = rd32(rel + 4 * i);
-    if ((off & 3) || off + 4 > o->imgLen) return fail("bad relocation");
+    if ((off & 3) || off > o->imgLen || o->imgLen - off < 4) return fail("bad relocation");
   }
   return true;
 }
@@ -198,6 +198,7 @@ static bool vmRun(DrvEntry* d, uint32_t fn, const uint32_t* a, int n, uint32_t* 
 }
 
 int drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx) {
+  if (ncfg < 0 || ncfg > DRV_MAX_ARGS) return DRV_E_ARGS;
   if (d->native) { void* c = nullptr; int rc = ((int (*)(void**, const drv_api_t*, const drv_kv_t*, int))(uintptr_t)d->ops.open)(&c, drv_native_api(), cfg, ncfg); *ctx = (uint32_t)(uintptr_t)c; return rc; }
   Marshal m(&d->vm);
   uint32_t kvOff = m.strOff; m.strOff += 12 * (uint32_t)ncfg;
@@ -215,6 +216,7 @@ int drv_vm_open(DrvEntry* d, const drv_kv_t* cfg, int ncfg, uint32_t* ctx) {
 }
 
 int drv_vm_invoke(DrvEntry* d, int mi, uint32_t ctx, const drv_val_t* args, int nargs, drv_val_t* ret, int* nret) {
+  if (mi < 0 || mi >= d->ops.nmethods || nargs < 0 || nargs > DRV_MAX_ARGS) return DRV_E_ARGS;
   if (d->native) {
     *nret = 0;
     int rc = ((drv_fn_t)(uintptr_t)d->ops.methods[mi].fn)((void*)(uintptr_t)ctx, args, nargs, ret, nret);
