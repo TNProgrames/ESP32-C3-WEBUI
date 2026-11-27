@@ -1716,7 +1716,8 @@ String luaeng_ui_poll_json(uint32_t since) {
     idx[k] = i;
   }
   o.reserve(64 + n * 80);
-  o = String("{\"seq\":") + String((unsigned)msgSeq) + ",\"ver\":" + String((unsigned)uiVer) + ",\"msgs\":[";
+  char hd[64]; snprintf(hd, sizeof(hd), "{\"seq\":%u,\"ver\":%u,\"msgs\":[", (unsigned)msgSeq, (unsigned)uiVer);
+  o += hd;                                                  // بلا String مؤقتة فتبقى الذاكرة المحجوزة
   for (int k = 0; k < n; k++) {
     char b[110];
     snprintf(b, sizeof(b), "%s{\"p\":%u,\"n\":\"%s\",\"v\":%s}", k ? "," : "", (unsigned)msgs[idx[k]].panel, msgs[idx[k]].name, msgs[idx[k]].val);
