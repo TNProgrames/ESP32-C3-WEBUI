@@ -1,6 +1,7 @@
 <script>
   import { api } from '../api.js';
   import { t } from '../store.svelte.js';
+  import Icon from './Icon.svelte';
 
   let c = $state({ localhost: '', host: '' });
   let pin = $state('');
@@ -34,7 +35,7 @@
 </script>
 
 <form class="glass" onsubmit={save}>
-  <h2>🔗 {t('الاتصال')}</h2>
+  <h2><Icon name="link" size={17} /> {t('الاتصال')}</h2>
   <label for="l">{t('المضيف المحلي')}</label>
   <div class="row" style="gap:6px;direction:ltr">
     <input id="l" style="flex:1;min-width:0" bind:value={c.localhost} oninput={() => (c.localhost = cleanHost(c.localhost))} maxlength="32" placeholder="esp32" autocapitalize="none" spellcheck="false" />

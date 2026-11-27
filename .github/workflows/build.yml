@@ -44,12 +44,15 @@ jobs:
           sudo apt-get install -y clang lld
           pip install platformio cryptography
 
-      # الدرايفرات المُودَعة في drivers/build (التي يجلبها متجر الواجهة) يجب أن تكون صالحة للتوقيع الحالي ونسخة الواجهة
-      - name: Verify committed drivers and store logic
+      # الدرايفرات في drivers/apps (التي يجلبها متجر الواجهة)؛ إن لم تكن مودعة في المستودع تُبنى تلقائياً قبل التحقق
+      - name: Verify drivers and store logic
         run: |
-          python3 tools/drv/test_drivers.py drivers/build
+          if [ ! -f drivers/apps/index.json ]; then
+            python3 tools/drv/build_index.py --version 1.0
+          fi
+          python3 tools/drv/test_drivers.py drivers/apps
           g++ -std=gnu++17 -O2 -Isrc tools/drv/test_vm.cpp src/drv_vm.cpp -o /tmp/test_vm
-          /tmp/test_vm drivers/build/*.drv
+          /tmp/test_vm drivers/apps/*.drv
           node tools/drv/test_store.mjs
 
       - name: Build, sign and test drivers from source
@@ -95,17 +98,18 @@ jobs:
 
           # 3) التطبيقات: سكريبت Lua + صفحة HTML + وصف
           cp dist-drivers/*.lua dist-drivers/*.html pkg/apps/ 2>/dev/null || true
-          cp apps/*.json pkg/apps/
+          for f in drivers/apps/*.json; do [ "$(basename "$f")" = "index.json" ] || cp "$f" pkg/apps/; done
           (cd pkg/apps && zip -qr ../../release/apps-$VER.zip .)
 
           # 4) أدوات التطوير: بناء/توقيع/اختبار الدرايفرات + مصادرها + الوثائق
-          mkdir -p pkg/tools/src pkg/tools/docs
+          mkdir -p pkg/tools/src pkg/tools/docs pkg/tools/apps
           cp -r tools/drv pkg/tools/drv
-          cp -r drivers pkg/tools/drivers && rm -rf pkg/tools/drivers/build
+          cp -r drivers pkg/tools/drivers && rm -rf pkg/tools/drivers/build pkg/tools/drivers/apps
           cp src/drv_api.h src/drv_vm.h src/drv_vm.cpp pkg/tools/src/
           cp docs/ARCHITECTURE.md pkg/tools/docs/ 2>/dev/null || true
           cp docs/scripting/drivers.md docs/scripting/ui.md pkg/tools/docs/
-          cp -r apps pkg/tools/apps
+          cp drivers/apps/*.lua drivers/apps/*.html pkg/tools/apps/ 2>/dev/null || true
+          for f in drivers/apps/*.json; do [ "$(basename "$f")" = "index.json" ] || cp "$f" pkg/tools/apps/; done
           find pkg/tools -name __pycache__ -prune -exec rm -rf {} +
           (cd pkg/tools && zip -qr ../../release/tools-$VER.zip .)
 

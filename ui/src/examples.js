@@ -236,6 +236,6 @@ timer.every(1000, function()
   lcd:text(0, 0, "Hello ESP32-C3")
   lcd:text(1, 0, "up " .. sys.uptime() .. "s   ")
 end)
-on_stop(function() lcd:clear() end)` },
+function on_stop() lcd:clear() end` },
   'Error test (حلقة لا نهائية)': { code: `-- يجب أن يوقفها الحارس بعد 200ms\nwhile true do end` }
 };

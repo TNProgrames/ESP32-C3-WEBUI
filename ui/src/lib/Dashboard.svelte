@@ -1,6 +1,8 @@
 <script>
   import { api, session } from '../api.js';
   import { t } from '../store.svelte.js';
+  import Icon from './Icon.svelte';
+  import SignalBars from './SignalBars.svelte';
   let { role } = $props();
 
   let ram = $state(0);
@@ -58,54 +60,78 @@
   });
 </script>
 
-<div class="glass">
-  <h2>📊 {t('استخدام الموارد')}</h2>
-  <label>{t('الذاكرة (RAM)')}: {ram}%</label>
-  <div class="bar"><div style="width:{ram}%"></div></div>
-  <label>{t('التخزين')}: {storage}%</label>
-  <div class="bar"><div style="width:{storage}%;background:var(--success)"></div></div>
+<div class="grid-2">
+  <div class="glass">
+    <h2><Icon name="activity" size={17} /> {t('استخدام الموارد')}</h2>
+    <div style="margin-bottom:12px">
+      <div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:5px">
+        <span style="color:var(--muted)">{t('الذاكرة (RAM)')}</span>
+        <b>{ram}%</b>
+      </div>
+      <div class="bar"><div style="width:{ram}%"></div></div>
+    </div>
+    <div>
+      <div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:5px">
+        <span style="color:var(--muted)">{t('التخزين')}</span>
+        <b>{storage}%</b>
+      </div>
+      <div class="bar"><div style="width:{storage}%;background:var(--success)"></div></div>
+    </div>
+  </div>
+
+  <div class="glass">
+    <h2><Icon name="globe" size={17} /> {t('الشبكة')}</h2>
+    {#if net}
+      <div class="stat-row">
+        <div class="stat-item"><span class="stat-label">IP</span><span class="stat-val" style="direction:ltr;text-align:start">{net.ip}</span></div>
+        {#if net.ssid}<div class="stat-item"><span class="stat-label">{t('الشبكة')}</span><span class="stat-val">{net.ssid}</span></div>{/if}
+        {#if net.status}<div class="stat-item"><span class="stat-label">{t('الحالة')}</span><span class="stat-val">{net.status}</span></div>{/if}
+        {#if net.rssi}<div class="stat-item"><span class="stat-label">{t('الإشارة')}</span><span class="stat-val row" style="gap:8px;flex-wrap:nowrap"><SignalBars rssi={net.rssi} /><span style="direction:ltr">{net.rssi} dBm</span></span></div>{/if}
+      </div>
+    {:else}
+      <span style="color:var(--muted);font-size:13px">{t('لا توجد بيانات (قد يكون الواي فاي قيد الضبط)')}</span>
+    {/if}
+  </div>
 </div>
 
 <div class="glass">
-  <h2>ℹ️ {t('الحالة')}</h2>
-  <div class="row" style="gap:18px;font-size:13px">
-    <span>{t('الإصدار')}: <b>{version || '-'}</b></span>
-    <span>{t('مدة التشغيل')}: <b>{fmt(uptime)}</b></span>
-    {#if temp !== null}<span>🌡️ {t('حرارة المعالج')}: <b style={temp > 70 ? 'color:#e55' : ''}>{temp.toFixed(1)}°C</b></span>{/if}
-  </div>
-  <div style="font-size:13px;margin-top:6px">⏰ {t('سبب آخر إقلاع')}: <b>{wake || '-'}</b></div>
-  {#if role === 'admin'}
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-      <b style="font-size:13px">😴 {t('النوم العميق')}</b>
-      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;font-size:13px">
-        <label>{t('مؤقت (ثانية، 0 = بلا)')} <input type="number" min="0" max="2592000" style="width:90px" bind:value={slSecs} /></label>
-        <label>{t('مستوى الاستيقاظ')}
-          <select bind:value={slLevel}><option value={1}>{t('عالٍ')} (1)</option><option value={0}>{t('منخفض')} (0)</option></select>
-        </label>
+  <h2><Icon name="info" size={17} /> {t('الحالة')}</h2>
+  <div class="stat-row">
+    <div class="stat-item"><span class="stat-label">{t('الإصدار')}</span><span class="stat-val">{version || '-'}</span></div>
+    <div class="stat-item"><span class="stat-label"><Icon name="clock" size={12} /> {t('مدة التشغيل')}</span><span class="stat-val" style="direction:ltr;text-align:start">{fmt(uptime)}</span></div>
+    {#if temp !== null}
+      <div class="stat-item">
+        <span class="stat-label"><Icon name="thermometer" size={12} /> {t('حرارة المعالج')}</span>
+        <span class="stat-val" style={temp > 70 ? 'color:var(--danger)' : ''}>{temp.toFixed(1)}°C</span>
       </div>
-      <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap;font-size:13px">
-        <span style="color:var(--muted)">{t('أرجل الاستيقاظ')}:</span>
+    {/if}
+    <div class="stat-item"><span class="stat-label"><Icon name="clock" size={12} /> {t('سبب آخر إقلاع')}</span><span class="stat-val">{wake || '-'}</span></div>
+  </div>
+
+  {#if role === 'admin'}
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="sub-title" style="margin-bottom:8px"><Icon name="moon" size={15} /> {t('النوم العميق')}</div>
+      <div class="row" style="gap:12px;align-items:flex-end;font-size:13px">
+        <div style="min-width:130px">
+          <label for="sl-secs" style="margin-top:0">{t('مؤقت (ثانية، 0 = بلا)')}</label>
+          <input id="sl-secs" type="number" min="0" max="2592000" style="width:120px" bind:value={slSecs} />
+        </div>
+        <div style="min-width:150px">
+          <label for="sl-lvl" style="margin-top:0">{t('مستوى الاستيقاظ')}</label>
+          <select id="sl-lvl" bind:value={slLevel}><option value={1}>{t('عالٍ')} (1)</option><option value={0}>{t('منخفض')} (0)</option></select>
+        </div>
+      </div>
+      <div class="row" style="gap:12px;margin-top:10px;font-size:13px">
+        <span style="color:var(--muted);font-size:12px">{t('أرجل الاستيقاظ')}:</span>
         {#each [0, 1, 2, 3, 4, 5] as n}
-          <label><input type="checkbox" value={n} bind:group={slPins} /> {n}</label>
+          <label class="row" style="margin:0;gap:5px;cursor:pointer;color:var(--text)"><input type="checkbox" value={n} bind:group={slPins} /> GPIO {n}</label>
         {/each}
       </div>
-      <button class="btn ghost" style="margin-top:8px" onclick={sleepNow}>😴 {t('نوم عميق الآن')}</button>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost" onclick={sleepNow}><Icon name="moon" size={15} /> {t('نوم عميق الآن')}</button>
+        <button class="btn ghost" onclick={restart}><Icon name="refresh" size={15} /> {t('إعادة تشغيل الجهاز')}</button>
+      </div>
     </div>
-    <div style="margin-top:14px"><button class="btn ghost" onclick={restart}>🔁 {t('إعادة تشغيل الجهاز')}</button></div>
   {/if}
-  <div class="msg ok">{msg}</div>
-</div>
-
-<div class="glass">
-  <h2>🌐 {t('الشبكة')}</h2>
-  {#if net}
-    <div class="row" style="gap:18px;font-size:13px">
-      <span>IP: <b>{net.ip}</b></span>
-      {#if net.ssid}<span>{t('الشبكة')}: <b>{net.ssid}</b></span>{/if}
-      {#if net.status}<span>{t('الحالة')}: <b>{net.status}</b></span>{/if}
-      {#if net.rssi}<span>{t('الإشارة')}: <b>{net.rssi} dBm</b></span>{/if}
-    </div>
-  {:else}
-    <span style="color:var(--muted);font-size:13px">{t('لا توجد بيانات (قد يكون الواي فاي قيد الضبط)')}</span>
-  {/if}
+  {#if msg}<div class="msg ok">{msg}</div>{/if}
 </div>

@@ -549,7 +549,7 @@ timer.every(1000, function()
   lcd:text(0, 0, "Hello ESP32-C3")
   lcd:text(1, 0, "up " .. sys.uptime() .. "s   ")
 end)
-on_stop(function() lcd:clear() end)
+function on_stop() lcd:clear() end
 ```
 
 ## شاشة OLED وحساس BME280 (درايفران موقّعان، المرحلة 5)

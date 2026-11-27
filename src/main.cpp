@@ -12,34 +12,37 @@
 #include <driver/gpio.h>
 #include <soc/soc_caps.h>
 #include <stdarg.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "lua_engine.h"
 #include "drv_loader.h"
 #include "em.h"           // صفحات الطوارئ المضغوطة (مولَّد من web/*.html)
+#include "sha_util.h"
 #include <string.h>
 
 #define MAX_NAME_LEN   32
-#define MAX_VALUE_LEN  32
+#define MAX_VALUE_LEN  96
 
 // --- Settings On Ram ---
-char localhost[33] = "";
+char localhost[40] = "";
 char internethost[33] = "";
 char pinreset[33] = "";
 char wifimode[33] = "AP";
 char wifissid[33] = "ESP32_STA";
-char wifipass[33] = "12345678";
+char wifipass[65] = "12345678";
 char apwifissid[33] = "ESP32_AP";
-char apwifipass[33] = "12345678";
+char apwifipass[65] = "12345678";
 char hostname_[33] = "esp32";   // الاسم المحلي: <hostname>.local
 
 // --- Network Settings ---
-char access_key[32] = "1234";     // مفتاح صفحة الطوارئ /em: الافتراضي 1234، ويمكن تغييره بملف /em_key (حتى 31 حرفًا)
+char access_key[97] = "1234";     // مفتاح صفحة الطوارئ /em: الافتراضي 1234، ويمكن تغييره من الواجهة أو ملف /em_key
 static char emSess[33] = "";      // رمز جلسة الطوارئ العشوائي (يُولَّد كل إقلاع) ويوضع في الكوكي بدل المفتاح نفسه
 
 // --- Token Store ---
 char Admin_Token[33] = "";
 char User_Token[33] = "";
 // --- WiFi is Working 
-bool wifiIsWorking = false;
+volatile bool wifiIsWorking = false;
 // --- النوم العميق (deep sleep): يُنفَّذ مؤجلًا كي يصل ردّ HTTP وتُسجَّل الرسائل ---
 static volatile uint32_t sleepAt = 0;
 static uint32_t sleepSecs = 0, sleepMask = 0;
@@ -85,10 +88,25 @@ volatile uint32_t restartAt = 0;          // إعادة تشغيل مؤجلة (m
 volatile bool mdnsApplyPending = false;  // إعادة تشغيل mDNS داخل loop() لا داخل callback
 volatile bool wifiApplyPending = false; // يُنفَّذ applyWiFi() داخل loop() وليس داخل callback
 
-// --- OTA State ---
-char otaError[64] = "";
-bool otaStarted = false;
-bool otaFsUnmounted = false;
+// --- Auth / Config / OTA Synchronization ---
+static portMUX_TYPE authMux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t cfgMux = nullptr;
+struct CfgLock {
+  CfgLock()  { if (cfgMux) xSemaphoreTakeRecursive(cfgMux, portMAX_DELAY); }
+  ~CfgLock() { if (cfgMux) xSemaphoreGiveRecursive(cfgMux); }
+};
+static bool otaBusy = false;
+struct OtaReq {
+  bool active = false;
+  bool started = false;
+  bool finished = false;
+  bool sawBytes = false;
+  bool fs = false;
+  bool fsUnmounted = false;
+  bool busyReject = false;
+  char err[64] = "";
+};
 volatile bool restartPending = false; // إعادة تشغيل مؤجلة (OTA / استعادة النسخة الاحتياطية)
 
 // --- Firmware version (يمكن تمريره من البناء: -DFW_VERSION=\"v1.0.0\") ---
@@ -131,14 +149,95 @@ static int      resetPin = -1;
 
 AsyncWebServer server(80);
 
-// --- Token Validation ---
+// --- Token & Auth Helpers ---
+static bool constTimeEq(const char* a, const char* b) {
+    if (!a || !b) return false;
+    size_t la = strlen(a), lb = strlen(b);
+    uint8_t diff = (uint8_t)(la != lb);
+    for (size_t i = 0; i < la; i++) diff |= (uint8_t)(a[i] ^ b[i < lb ? i : 0]);
+    return diff == 0;
+}
+
+static bool parseLongStrict(const String& s, long& out) {
+    if (s.length() == 0) return false;
+    char* end = nullptr;
+    long v = strtol(s.c_str(), &end, 10);
+    if (end == s.c_str() || *end != '\0') return false;
+    out = v;
+    return true;
+}
+
+static bool hashPassword(const char* plain, char* out, size_t outSz) {
+    if (!plain || !out || outSz < 89) return false;
+    uint8_t saltBytes[8];
+    uint32_t r0 = esp_random(), r1 = esp_random();
+    memcpy(saltBytes, &r0, 4);
+    memcpy(saltBytes + 4, &r1, 4);
+    char salt[17];
+    for (int i = 0; i < 8; i++) snprintf(salt + i * 2, 3, "%02x", saltBytes[i]);
+    salt[16] = '\0';
+
+    size_t plen = strlen(plain);
+    size_t msgLen = 16 + 1 + plen;
+    char* msg = (char*)malloc(msgLen + 1);
+    if (!msg) return false;
+    memcpy(msg, salt, 16);
+    msg[16] = ':';
+    memcpy(msg + 17, plain, plen);
+    uint8_t digest[32];
+    bool ok = sha256_once((const uint8_t*)msg, msgLen, digest);
+    memset(msg, 0, msgLen);
+    free(msg);
+    if (!ok) return false;
+
+    char hex[65];
+    for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    hex[64] = '\0';
+    snprintf(out, outSz, "sha256$%s$%s", salt, hex);
+    return true;
+}
+
+static bool verifyPassword(const char* plain, const char* stored) {
+    if (!plain || !stored || !stored[0]) return false;
+    if (strncmp(stored, "sha256$", 7) != 0) {
+        return constTimeEq(plain, stored); // توافق رجعي مع النسخ القديمة غير المعمّاة
+    }
+    const char* salt = stored + 7;
+    const char* sep = strchr(salt, '$');
+    if (!sep) return false;
+    size_t saltLen = (size_t)(sep - salt);
+    const char* expectedHex = sep + 1;
+    if (saltLen == 0 || saltLen > 32 || strlen(expectedHex) != 64) return false;
+
+    size_t plen = strlen(plain);
+    size_t msgLen = saltLen + 1 + plen;
+    char* msg = (char*)malloc(msgLen + 1);
+    if (!msg) return false;
+    memcpy(msg, salt, saltLen);
+    msg[saltLen] = ':';
+    memcpy(msg + saltLen + 1, plain, plen);
+    uint8_t digest[32];
+    bool ok = sha256_once((const uint8_t*)msg, msgLen, digest);
+    memset(msg, 0, msgLen);
+    free(msg);
+    if (!ok) return false;
+
+    char hex[65];
+    for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    hex[64] = '\0';
+    return constTimeEq(hex, expectedHex);
+}
+
 // الرمز الفارغ مرفوض دائماً (قبل أول تسجيل دخول يكون الرمز فارغاً)
 static bool tokenMatches(AsyncWebServerRequest *request, const char* stored) {
-    if (stored[0] == '\0' || !request->hasHeader("User_Token")) return false;
+    if (!request->hasHeader("User_Token")) return false;
+    char tok[33];
+    portENTER_CRITICAL(&authMux);
+    strlcpy(tok, stored, sizeof(tok));
+    portEXIT_CRITICAL(&authMux);
+    if (tok[0] == '\0') return false;
     const char* g = request->getHeader("User_Token")->value().c_str();
-    size_t n = strlen(stored); uint8_t diff = (uint8_t)(strlen(g) != n);
-    for (size_t i = 0; i < n; i++) diff |= (uint8_t)(stored[i] ^ g[i < strlen(g) ? i : 0]);   // مقارنة ثابتة الزمن
-    return diff == 0;
+    return constTimeEq(tok, g);
 }
 static bool isAdminToken(AsyncWebServerRequest *request) { return tokenMatches(request, Admin_Token); }
 static bool isAnyToken(AsyncWebServerRequest *request)   { return tokenMatches(request, Admin_Token) || tokenMatches(request, User_Token); }
@@ -166,9 +265,10 @@ char* StorageUsage(char* buffer, size_t bufferSize) {
 }
 
 char* generateToken(char* buffer, size_t bufferSize) {
+    if (!buffer || bufferSize < 33) return buffer;
     const char alphanum[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     for (int i = 0; i < 32; i++) {
-        buffer[i] = alphanum[random(sizeof(alphanum) - 1)];
+        buffer[i] = alphanum[esp_random() % (sizeof(alphanum) - 1)];
     }
     buffer[32] = '\0';
     return buffer;
@@ -178,11 +278,12 @@ char* generateToken(char* buffer, size_t bufferSize) {
 
 bool updateOrCreateJson(const char* filePath, const char* path, const char* newValue) {
   if (!path || !newValue || strlen(newValue) > MAX_VALUE_LEN) return false;
+  CfgLock _lk;
 
   JsonDocument doc;
   File file = LittleFS.open(filePath, "r");
   if (file) {
-    deserializeJson(doc, file);
+    if (!file.isDirectory()) deserializeJson(doc, file);
     file.close();
   }
 
@@ -191,15 +292,19 @@ bool updateOrCreateJson(const char* filePath, const char* path, const char* newV
 
   char temp[192];
   strlcpy(temp, path, sizeof(temp));
-  char* token = strtok(temp, ".");
+  char* sp = nullptr;
+  char* token = strtok_r(temp, ".", &sp);
   
   while (token) {
     if (strcmp(token, "newAry") == 0) {
+      if (!current.is<JsonArray>()) return false;
       current = current.as<JsonArray>().add<JsonArray>();
     } else if (strcmp(token, "newObj") == 0) {
+      if (!current.is<JsonArray>()) return false;
       current = current.as<JsonArray>().add<JsonObject>();
     } else if (strstr(token, "_obj") || strstr(token, "_Obj")) {
       int idx = atoi(token);
+      if (idx < 0 || !current.is<JsonArray>()) return false;
       current = current.as<JsonArray>()[idx];
     } else if (token[strlen(token) - 1] == '-') {
       token[strlen(token) - 1] = 0;
@@ -209,11 +314,11 @@ bool updateOrCreateJson(const char* filePath, const char* path, const char* newV
       if (!current[token].is<JsonObject>()) current[token].to<JsonObject>();
       current = current[token];
     }
-    token = strtok(NULL, ".");
+    token = strtok_r(NULL, ".", &sp);
   }
   
   current.set(newValue);
-  // كتابة ذرّية: ملف مؤقت ثم rename، فلا يفسد انقطاعُ الكهرباء users.json أو settings.json
+  // كتابة ذرّية: ملف مؤقت ثم rename (انقطاع الكهرباء لا يفسد الملف)
   String tmp = String(filePath) + ".tmp";
   File fileW = LittleFS.open(tmp, "w");
   if (!fileW) return false;
@@ -226,9 +331,11 @@ bool updateOrCreateJson(const char* filePath, const char* path, const char* newV
 }
 
 bool getJson(const char* filePath, const char* path, char* outValue, size_t outValueSize) {
+  CfgLock _lk;
   if (!LittleFS.exists(filePath)) return false;
   JsonDocument doc;
   File file = LittleFS.open(filePath, "r");
+  if (!file || file.isDirectory()) { if (file) file.close(); return false; }
   DeserializationError err = deserializeJson(doc, file);
   file.close();
   if (err) return false;
@@ -236,17 +343,19 @@ bool getJson(const char* filePath, const char* path, char* outValue, size_t outV
   JsonVariant current = doc.as<JsonArray>();
   char temp[192];
   strlcpy(temp, path, sizeof(temp));
-  char* token = strtok(temp, ".");
+  char* sp = nullptr;
+  char* token = strtok_r(temp, ".", &sp);
   
   while (token) {
     if (strstr(token, "_obj") || strstr(token, "_Obj")) {
       int idx = atoi(token);
+      if (idx < 0 || !current.is<JsonArray>()) return false;
       current = current.as<JsonArray>()[idx];
     } else {
       current = current[token];
     }
     if (current.isNull()) return false;
-    token = strtok(NULL, ".");
+    token = strtok_r(NULL, ".", &sp);
   }
 
   if (!current.is<const char*>()) return false;
@@ -258,11 +367,12 @@ bool getJson(const char* filePath, const char* path, char* outValue, size_t outV
 #define NETS_FILE "/wifi_nets.json"
 #define MAX_NETS 6
 static void loadNets(JsonDocument& d) {
+  CfgLock _lk;
   File f = LittleFS.open(NETS_FILE, "r");
   if (f) { deserializeJson(d, f); f.close(); }
   if (!d.is<JsonArray>()) d.to<JsonArray>();
   if (d.as<JsonArray>().size() == 0) {          // ترقية من الإعداد القديم (شبكة واحدة)
-    char s[33] = "", p[33] = "";
+    char s[33] = "", p[65] = "";
     getJson("/settings.json", "0_Obj.wifi.ssid", s, sizeof(s)); getJson("/settings.json", "0_Obj.wifi.pass", p, sizeof(p));
     if (*s) { JsonObject o = d.as<JsonArray>().add<JsonObject>(); o["ssid"] = s; o["pass"] = p; }
   }
@@ -285,7 +395,7 @@ static bool validHost(String h) {
   return true;
 }
 static void loadHost() {
-  char h[33] = "esp32.local"; getJson("/settings.json", "0_Obj.localhost", h, sizeof h);
+  char h[40] = "esp32.local"; getJson("/settings.json", "0_Obj.localhost", h, sizeof h);
   char* dot = strchr(h, '.'); if (dot) *dot = 0;          // نحتفظ بالجزء قبل أول نقطة
   cleanHost(h); strlcpy(hostname_, h, sizeof(hostname_));
 }
@@ -368,19 +478,14 @@ void applyWiFi() {
 
 // --- System Initialization ---
 
-void loadsetting() {
-  Serial.begin(115200);
-  logPrintf("Boot %s\n", FW_VERSION);
-  if (!LittleFS.begin(true)) {
-    logPrintf("LittleFS mount failed\n");
-    return;
-  }
-
+static void seedDefaultFiles() {
+  CfgLock _lk;
   if (!LittleFS.exists("/users.json")) {
+    char ha[97], hu[97];
     updateOrCreateJson("/users.json", "newObj.username", "admin");
-    updateOrCreateJson("/users.json", "0_Obj.password", "admin123");
+    if (hashPassword("admin123", ha, sizeof(ha))) updateOrCreateJson("/users.json", "0_Obj.password", ha);
     updateOrCreateJson("/users.json", "newObj.username", "user");
-    updateOrCreateJson("/users.json", "1_Obj.password", "user123");
+    if (hashPassword("user123", hu, sizeof(hu))) updateOrCreateJson("/users.json", "1_Obj.password", hu);
   }
 
   if (!LittleFS.exists("/settings.json")) {
@@ -393,49 +498,53 @@ void loadsetting() {
     updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", "ESP32_AP");
     updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", "12345678");
   }
-  else
-  {
-    getJson("/settings.json", "0_Obj.localhost", localhost, sizeof(localhost));
-    getJson("/settings.json", "0_Obj.internethost", internethost, sizeof(internethost));
-    getJson("/settings.json", "0_Obj.pinreset", pinreset, sizeof(pinreset));
+}
+
+void loadsetting() {
+  Serial.begin(115200);
+  logPrintf("Boot %s\n", FW_VERSION);
+  if (!cfgMux) cfgMux = xSemaphoreCreateRecursiveMutex();
+  if (!LittleFS.begin(true)) {
+    logPrintf("LittleFS mount failed\n");
+    return;
   }
+
+  seedDefaultFiles();
+  getJson("/settings.json", "0_Obj.localhost", localhost, sizeof(localhost));
+  getJson("/settings.json", "0_Obj.internethost", internethost, sizeof(internethost));
+  getJson("/settings.json", "0_Obj.pinreset", pinreset, sizeof(pinreset));
   applyWiFi();
   
 }
 
 // --- Emergency Tools Helper ---
 static bool hasCookie(AsyncWebServerRequest *request, const char* name) {
-  if (!emSess[0] || !request->hasHeader("Cookie")) return false;
-  char want[64]; snprintf(want, sizeof(want), "%s=%s", name, emSess);
+  char sess[33];
+  portENTER_CRITICAL(&authMux);
+  strlcpy(sess, emSess, sizeof(sess));
+  portEXIT_CRITICAL(&authMux);
+  if (!sess[0] || !request->hasHeader("Cookie")) return false;
+  char want[64]; snprintf(want, sizeof(want), "%s=%s", name, sess);
   const char* c = request->header("Cookie").c_str();
   size_t wl = strlen(want);
   for (const char* p = c; (p = strstr(p, want)) != nullptr; p += wl)
     if ((p == c || p[-1] == ' ' || p[-1] == ';') && (p[wl] == 0 || p[wl] == ';')) return true;
   return false;
 }
-static uint8_t emFails = 0;
-static uint32_t emLockUntil = 0;
-static bool emLocked() { return emLockUntil && (int32_t)(millis() - emLockUntil) < 0; }
 bool isAuthorizedEm(AsyncWebServerRequest *request) {
-    if (request->hasParam("pass") && !emLocked()) {            // قفل 60 ثانية بعد 5 محاولات خاطئة، لكل مسارات الطوارئ
-        if (request->getParam("pass")->value() == access_key) { emFails = 0; return true; }
-        if (++emFails >= 5) { emFails = 0; emLockUntil = millis() + 60000; if (!emLockUntil) emLockUntil = 1; }
-    }
     return hasCookie(request, "session_key_em");
 }
 
 bool isAuthorized(AsyncWebServerRequest *request) {
-    if (isAdminToken(request)) return true;
-    return hasCookie(request, "session_key");
+    return isAdminToken(request);
 }
 
 void refreshSessionEm(AsyncWebServerResponse *response) {
-    char c[96]; snprintf(c, sizeof(c), "session_key_em=%s; Max-Age=900; Path=/; SameSite=Strict", emSess);
-    response->addHeader("Set-Cookie", c);
-}
-
-void refreshSession(AsyncWebServerResponse *response) {
-    char c[96]; snprintf(c, sizeof(c), "session_key=%s; Max-Age=900; Path=/; SameSite=Strict", emSess);
+    char sess[33];
+    portENTER_CRITICAL(&authMux);
+    strlcpy(sess, emSess, sizeof(sess));
+    portEXIT_CRITICAL(&authMux);
+    char c[112]; snprintf(c, sizeof(c), "session_key_em=%s; Max-Age=900; Path=/; HttpOnly; SameSite=Strict", sess);
     response->addHeader("Set-Cookie", c);
 }
 
@@ -466,6 +575,20 @@ static bool getPathParam(AsyncWebServerRequest *request, const char* name, Strin
     if (!request->hasParam(name)) return false;
     out = request->getParam(name)->value();
     return validPath(out);
+}
+static bool collectBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total, size_t maxBytes) {
+    if (total == 0 || total > maxBytes) { if (index == 0) request->send(413); return false; }
+    if (index == 0) {
+        request->_tempObject = malloc(total + 1);
+        if (!request->_tempObject) { request->send(500); return false; }
+    }
+    char* buf = (char*)request->_tempObject;
+    if (!buf) return false;
+    if (index + len > total) { request->send(400); return false; }
+    if (len > 0) memcpy(buf + index, data, len);
+    if (index + len < total) return false;
+    buf[total] = 0;
+    return true;
 }
 
 // --- Terminal commands ---
@@ -514,7 +637,7 @@ static String runCommand(String line) {
     String p = arg.length() ? arg : String("/");
     if (!validPath(p)) return "invalid path";
     File d = LittleFS.open(p);
-    if (!d || !d.isDirectory()) return "not a directory";
+    if (!d || !d.isDirectory()) { if (d) d.close(); return "not a directory"; }
     String o;
     File f = d.openNextFile();
     while (f) {
@@ -522,8 +645,10 @@ static String runCommand(String line) {
       o += f.name();
       if (!f.isDirectory()) { o += "  "; o += String((unsigned long)f.size()); }
       o += "\n";
+      f.close();
       f = d.openNextFile();
     }
+    d.close();
     return o.length() ? o : String("(empty)");
   }
   return "Unknown command: " + c + " (type help)";
@@ -533,9 +658,15 @@ static String runCommand(String line) {
 static int resetPinNumber() { return pinreset[0] ? atoi(pinreset) : 9; }
 
 static void doPasswordReset() {
-  updateOrCreateJson("/users.json", "0_Obj.password", "admin123");
-  updateOrCreateJson("/users.json", "1_Obj.password", "user123");
+  {
+    CfgLock _lk;
+    char ha[97], hu[97];
+    if (hashPassword("admin123", ha, sizeof(ha))) updateOrCreateJson("/users.json", "0_Obj.password", ha);
+    if (hashPassword("user123", hu, sizeof(hu))) updateOrCreateJson("/users.json", "1_Obj.password", hu);
+  }
+  portENTER_CRITICAL(&authMux);
   Admin_Token[0] = 0; User_Token[0] = 0;
+  portEXIT_CRITICAL(&authMux);
   loginFails = 0; loginLockUntil = 0;
   logPrintf("Passwords reset to defaults\n");
 }
@@ -561,16 +692,43 @@ void EmSetupAPI() {
         }
     });
 
-    // التحقق من مفتاح الطوارئ (مع قفل مؤقت بعد 5 محاولات خاطئة)
-    server.on("/em/check", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (emLocked()) { request->send(429); return; }
-        if (isAuthorizedEm(request) && request->hasParam("pass")) {
+    // التحقق من مفتاح الطوارئ عبر POST فقط (مع قفل مؤقت بعد 5 محاولات خاطئة ومقارنة ثابتة الزمن)
+    server.on("/em/check", HTTP_POST, [](AsyncWebServerRequest *request) {
+        static uint8_t fails = 0;
+        static uint32_t lockUntil = 0;
+        uint32_t now = millis();
+        if (lockUntil && (int32_t)(now - lockUntil) < 0) { request->send(429); return; }
+        char curKey[97] = "1234";
+        {
+            CfgLock _lk;
+            File kf = LittleFS.open("/em_key", "r");
+            if (kf) {
+                String k = kf.readString(); k.trim(); kf.close();
+                if ((k.startsWith("sha256$") && k.length() < sizeof(access_key)) || (k.length() >= 4 && k.length() < 32)) {
+                    portENTER_CRITICAL(&authMux);
+                    strlcpy(access_key, k.c_str(), sizeof(access_key));
+                    portEXIT_CRITICAL(&authMux);
+                }
+            }
+        }
+        portENTER_CRITICAL(&authMux);
+        strlcpy(curKey, access_key, sizeof(curKey));
+        portEXIT_CRITICAL(&authMux);
+        if (request->hasParam("pass", true) && verifyPassword(request->getParam("pass", true)->value().c_str(), curKey)) {
+            fails = 0; lockUntil = 0;
             AsyncWebServerResponse *response = request->beginResponse(200);
             refreshSessionEm(response);
             request->send(response);
             return;
         }
+        if (++fails >= 5) { fails = 0; lockUntil = now + 60000; }
         request->send(401);
+    });
+
+    server.on("/em/logout", HTTP_POST, [](AsyncWebServerRequest *request) {
+        AsyncWebServerResponse *response = request->beginResponse(200);
+        response->addHeader("Set-Cookie", "session_key_em=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict");
+        request->send(response);
     });
 
     server.on("/api/list", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -578,7 +736,7 @@ void EmSetupAPI() {
         String path = "/";
         if (request->hasParam("path") && !getPathParam(request, "path", path)) { request->send(400); return; }
         File root = LittleFS.open(path);
-        if (!root || !root.isDirectory()) { request->send(400); return; }
+        if (!root || !root.isDirectory()) { if (root) root.close(); request->send(400); return; }
         JsonDocument doc;
         doc["total"] = LittleFS.totalBytes();
         doc["used"] = LittleFS.usedBytes();
@@ -589,56 +747,76 @@ void EmSetupAPI() {
             f["name"] = String(file.name());
             f["isDir"] = file.isDirectory();
             f["size"] = file.size();
+            file.close();
             file = root.openNextFile();
         }
+        root.close();
         String output; serializeJson(doc, output);
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
 
     server.on("/api/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
+        uint8_t* st = (uint8_t*)request->_tempObject;
+        if (!st || *st != 0) { request->send((st && *st == 1) ? 400 : 500); return; }
         AsyncWebServerResponse *response = request->beginResponse(200);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) return;
-        if (!index) request->_tempFile = LittleFS.open(filename, "w");
-        if (request->_tempFile) request->_tempFile.write(data, len);
+        if (!index) {
+            uint8_t* st = (uint8_t*)malloc(1);
+            request->_tempObject = st;
+            if (!st) return;
+            if (!validPath(filename)) { *st = 1; return; }
+            for (int i = 1; i < (int)filename.length(); i++)
+              if (filename[i] == '/') { String d = filename.substring(0, i); if (!LittleFS.exists(d)) LittleFS.mkdir(d); }
+            request->_tempFile = LittleFS.open(filename, "w");
+            *st = request->_tempFile ? 0 : 2;
+        }
+        uint8_t* st = (uint8_t*)request->_tempObject;
+        if (!st || *st != 0) return;
+        if (request->_tempFile && len > 0 && request->_tempFile.write(data, len) != len) *st = 2;
         if (final && request->_tempFile) request->_tempFile.close();
     });
 
     server.on("/api/download", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String path;
-        if (!getPathParam(request, "path", path) || !LittleFS.exists(path)) { request->send(400); return; }
+        if (!getPathParam(request, "path", path)) { request->send(400); return; }
+        File f = LittleFS.open(path, "r");
+        bool ok = f && !f.isDirectory();
+        if (f) f.close();
+        if (!ok) { request->send(400); return; }
         AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "application/octet-stream");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
     
     server.on("/api/mkdir", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
+        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String path;
         if (!getPathParam(request, "path", path)) { request->send(400); return; }
-        LittleFS.mkdir(path);
-        AsyncWebServerResponse *response = request->beginResponse(200);
+        File ex = LittleFS.open(path, "r");
+        bool ok = ex ? ex.isDirectory() : LittleFS.mkdir(path);
+        if (ex) ex.close();
+        AsyncWebServerResponse *response = request->beginResponse(ok ? 200 : 500);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
     
     server.on("/api/read", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
+        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String path;
-        if (!getPathParam(request, "path", path) || !LittleFS.exists(path)) { request->send(400); return; }
+        if (!getPathParam(request, "path", path)) { request->send(400); return; }
+        File f = LittleFS.open(path, "r");
+        bool ok = f && !f.isDirectory();
+        if (f) f.close();
+        if (!ok) { request->send(400); return; }
         AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "text/plain");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
 
@@ -650,11 +828,12 @@ void EmSetupAPI() {
           if (path[i] == '/') { String d = path.substring(0, i); if (!LittleFS.exists(d)) LittleFS.mkdir(d); }
         File f = LittleFS.open(path, "w");
         if (!f) { request->send(500); return; }
-        f.print(request->getParam("content", true)->value());
+        const String& content = request->getParam("content", true)->value();
+        size_t w = f.write((const uint8_t*)content.c_str(), content.length());
         f.close();
+        if (w != content.length()) { request->send(500); return; }
         AsyncWebServerResponse *response = request->beginResponse(200);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
 
@@ -665,27 +844,36 @@ void EmSetupAPI() {
         bool success = deleteRecursive(path);
         AsyncWebServerResponse *response = request->beginResponse(success ? 200 : 500);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
     
     server.on("/api/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(404); return; }
+        if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String oldPath, newPath;
         if (!getPathParam(request, "old", oldPath) || !getPathParam(request, "new", newPath)) { request->send(400); return; }
-        LittleFS.rename(oldPath, newPath);
-        AsyncWebServerResponse *response = request->beginResponse(200);
+        bool ok = LittleFS.rename(oldPath, newPath);
+        AsyncWebServerResponse *response = request->beginResponse(ok ? 200 : 500);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
     
     server.on("/api/format", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
-        LittleFS.format();
-        AsyncWebServerResponse *response = request->beginResponse(200);
+        luaeng_stop_all();
+        delay(50);
+        bool ok = false;
+        {
+          CfgLock _lk;
+          ok = LittleFS.format();
+          if (ok) seedDefaultFiles();
+        }
+        if (ok) {
+          portENTER_CRITICAL(&authMux);
+          Admin_Token[0] = 0; User_Token[0] = 0;
+          portEXIT_CRITICAL(&authMux);
+        }
+        AsyncWebServerResponse *response = request->beginResponse(ok ? 200 : 500);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
-        refreshSession(response);
         request->send(response);
     });
 }
@@ -703,17 +891,15 @@ static bool validUiPage(const String& p) {
 }
 
 void setupServerWeb() {
-  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
-  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, User_Token, User_Role");
-  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
-  
+  // التزام سياسة نفس المصدر (same-origin) بدلاً من السماح لأي نطاق خارجي بالوصول للواجهات المحمية
   server.serveStatic("/", LittleFS, "/app").setDefaultFile("index.html");
 
   // --- Login API ---
   server.on("/login", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (!collectBody(request, data, len, index, total, 512)) return;
     JsonDocument doc; 
-    if (deserializeJson(doc, data, len)) { request->send(400); return; }
+    if (deserializeJson(doc, (const char*)request->_tempObject, total)) { request->send(400); return; }
     const char* u = doc["username"];
     const char* p = doc["password"];
     if (!u || !p) { request->send(400); return; }
@@ -722,19 +908,28 @@ void setupServerWeb() {
       return;
     }
 
-    char passWord[33] = "", token[33];
+    char passWord[97] = "", token[33];
     int userIdx = (strcmp(u, "admin") == 0) ? 0 : ((strcmp(u, "user") == 0) ? 1 : -1);
 
     if (userIdx != -1) {
       char pathP[32];
       snprintf(pathP, sizeof(pathP), "%d_Obj.password", userIdx);
 
-      if (getJson("/users.json", pathP, passWord, sizeof(passWord)) && strcmp(p, passWord) == 0) {
+      if (getJson("/users.json", pathP, passWord, sizeof(passWord)) && verifyPassword(p, passWord)) {
+        // ترقية تلقائية لأي كلمة مرور قديمة غير معمّاة عند أول دخول ناجح
+        if (strncmp(passWord, "sha256$", 7) != 0) {
+          char hp[97];
+          if (hashPassword(p, hp, sizeof(hp))) updateOrCreateJson("/users.json", pathP, hp);
+        }
         generateToken(token, sizeof(token));
+        portENTER_CRITICAL(&authMux);
         if (userIdx == 0) strlcpy(Admin_Token, token, sizeof(Admin_Token));
         else strlcpy(User_Token, token, sizeof(User_Token));
-        char res[128];
-        snprintf(res, sizeof(res), "{\"token\":\"%s\", \"role\":\"%s\"}", token, u);
+        portEXIT_CRITICAL(&authMux);
+        JsonDocument resDoc;
+        resDoc["token"] = token;
+        resDoc["role"] = u;
+        String res; serializeJson(resDoc, res);
         loginFails = 0; loginLockUntil = 0;
         logPrintf("Login ok: %s\n", u);
         request->send(200, "application/json", res);
@@ -769,77 +964,115 @@ void setupServerWeb() {
   });
 
   // --- Settings SAVE APIs ---
-  auto saveHandler = [](AsyncWebServerRequest *request, uint8_t *data, size_t len, int type) {
-    if (isAdminToken(request)) {
-      JsonDocument doc;
-      if (deserializeJson(doc, data, len)) { request->send(400); return; }
-      if (type == 0) { // WiFi
-        if (doc["nets"].is<JsonArray>()) {          // قائمة الشبكات المحفوظة (الأولى تُنسخ للحقول القديمة)
-          JsonDocument nd; JsonArray out = nd.to<JsonArray>();
-          for (JsonObject n : doc["nets"].as<JsonArray>()) {
-            const char* ss = n["ssid"] | ""; const char* pw = n["pass"] | "";
-            if (!*ss || strlen(ss) > 32 || strlen(pw) > 63 || (int)out.size() >= MAX_NETS) continue;
-            JsonObject o = out.add<JsonObject>(); o["ssid"] = ss; o["pass"] = pw;
-          }
-          File nf = LittleFS.open(String(NETS_FILE) + ".tmp", "w"); if (nf) { size_t w = serializeJson(nd, nf); nf.close(); if (w) { LittleFS.remove(NETS_FILE); LittleFS.rename(String(NETS_FILE) + ".tmp", NETS_FILE); } }
-          doc["ssid"] = out.size() ? (const char*)(out[0]["ssid"] | "") : "";
-          doc["pass"] = out.size() ? (const char*)(out[0]["pass"] | "") : "";
+  auto saveHandler = [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total, int type) {
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (!collectBody(request, data, len, index, total, 2048)) return;
+    JsonDocument doc;
+    if (deserializeJson(doc, (const char*)request->_tempObject, total)) { request->send(400); return; }
+    if (type == 0) { // WiFi
+      CfgLock _lk;
+      if (doc["nets"].is<JsonArray>()) {          // قائمة الشبكات المحفوظة (الأولى تُنسخ للحقول القديمة)
+        JsonDocument nd; JsonArray out = nd.to<JsonArray>();
+        for (JsonObject n : doc["nets"].as<JsonArray>()) {
+          const char* ss = n["ssid"] | ""; const char* pw = n["pass"] | "";
+          if (!*ss || strlen(ss) > 32 || strlen(pw) > 63 || (int)out.size() >= MAX_NETS) continue;
+          JsonObject o = out.add<JsonObject>(); o["ssid"] = ss; o["pass"] = pw;
         }
-        updateOrCreateJson("/settings.json", "0_Obj.wifi.mode", doc["mode"]);
-        updateOrCreateJson("/settings.json", "0_Obj.wifi.ssid", doc["ssid"]);
-        updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]);
-        updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", doc["ap_ssid"]);
-        updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"]);
-        wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
-      } else if (type == 1) { // Comm
-        if (doc["localhost"].is<const char*>() && !validHost(String(doc["localhost"].as<const char*>()))) { request->send(400); return; }
-        {
-          String nh = doc["localhost"].as<const char*>(); if (nh.endsWith(".local")) nh.remove(nh.length() - 6);
-          bool changed = nh != String(hostname_);
-          updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"]);
-          mdnsApplyPending = true;                       // يُحدَّث mDNS فورًا
-          if (changed) restartAt = millis() + 1500;      // وعند تغيّر الاسم: حفظ ثم إعادة تشغيل نظيفة
-        }
-        updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"]);
-      } else if (type == 2) { // Pin
-        updateOrCreateJson("/settings.json", "0_Obj.pinreset", doc["pin"]);
-      } else if (type == 3) { // Pass
-        updateOrCreateJson("/users.json", "0_Obj.password", doc["ap"]);
-        updateOrCreateJson("/users.json", "1_Obj.password", doc["up"]);
+        File nf = LittleFS.open(NETS_FILE, "w");
+        if (!nf) { request->send(500); return; }
+        serializeJson(nd, nf); nf.close();
+        doc["ssid"] = out.size() ? (const char*)(out[0]["ssid"] | "") : "";
+        doc["pass"] = out.size() ? (const char*)(out[0]["pass"] | "") : "";
       }
-      request->send(200);
-    } else { request->send(401); }
+      if (!updateOrCreateJson("/settings.json", "0_Obj.wifi.mode", doc["mode"]) ||
+          !updateOrCreateJson("/settings.json", "0_Obj.wifi.ssid", doc["ssid"]) ||
+          !updateOrCreateJson("/settings.json", "0_Obj.wifi.pass", doc["pass"]) ||
+          !updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_ssid", doc["ap_ssid"]) ||
+          !updateOrCreateJson("/settings.json", "0_Obj.wifi.ap_pass", doc["ap_pass"])) {
+        request->send(400); return;
+      }
+      wifiApplyPending = true; // يُطبَّق في loop() بعد إرسال الرد
+    } else if (type == 1) { // Comm
+      CfgLock _lk;
+      if (doc["localhost"].is<const char*>()) {
+        if (!validHost(String(doc["localhost"].as<const char*>()))) { request->send(400); return; }
+        String nh = doc["localhost"].as<const char*>(); if (nh.endsWith(".local")) nh.remove(nh.length() - 6);
+        bool changed = nh != String(hostname_);
+        if (!updateOrCreateJson("/settings.json", "0_Obj.localhost", doc["localhost"])) { request->send(400); return; }
+        mdnsApplyPending = true;                       // يُحدَّث mDNS فورًا
+        if (changed) restartAt = millis() + 1500;      // وعند تغيّر الاسم: حفظ ثم إعادة تشغيل نظيفة
+      }
+      if (doc["host"].is<const char*>() && !updateOrCreateJson("/settings.json", "0_Obj.internethost", doc["host"])) {
+        request->send(400); return;
+      }
+    } else if (type == 2) { // Pin
+      if (!updateOrCreateJson("/settings.json", "0_Obj.pinreset", doc["pin"])) { request->send(400); return; }
+    } else if (type == 3) { // Pass
+      const char* ap = doc["ap"].is<const char*>() ? doc["ap"].as<const char*>() : "";
+      const char* up = doc["up"].is<const char*>() ? doc["up"].as<const char*>() : "";
+      const char* em = doc["em"].is<const char*>() ? doc["em"].as<const char*>() : "";
+      if (!*ap && !*up && !*em) { request->send(400); return; }
+      if ((*ap && strlen(ap) > 64) || (*up && strlen(up) > 64)) { request->send(400); return; }
+      if (*em && (strlen(em) < 4 || strlen(em) > 31)) { request->send(400); return; }
+      CfgLock _lk;
+      if (*ap) {
+        char hp[97];
+        if (!hashPassword(ap, hp, sizeof(hp)) || !updateOrCreateJson("/users.json", "0_Obj.password", hp)) {
+          request->send(500); return;
+        }
+      }
+      if (*up) {
+        char hp[97];
+        if (!hashPassword(up, hp, sizeof(hp)) || !updateOrCreateJson("/users.json", "1_Obj.password", hp)) {
+          request->send(500); return;
+        }
+      }
+      if (*em) {
+        char hk[97];
+        if (!hashPassword(em, hk, sizeof(hk))) { request->send(500); return; }
+        File kf = LittleFS.open("/em_key", "w");
+        if (!kf) { request->send(500); return; }
+        size_t wk = kf.print(hk);
+        kf.close();
+        if (wk == 0) { request->send(500); return; }
+        portENTER_CRITICAL(&authMux);
+        strlcpy(access_key, hk, sizeof(access_key));
+        generateToken(emSess, sizeof(emSess));
+        portEXIT_CRITICAL(&authMux);
+      }
+    }
+    request->send(200);
   };
 
-  server.on("/settings/save_wifi", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,0); });
-  server.on("/settings/save_comm", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,1); });
-  server.on("/settings/save_pin", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,2); });
-  server.on("/settings/save_pass", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,3); });
+  server.on("/settings/save_wifi", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,i,t,0); });
+  server.on("/settings/save_comm", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,i,t,1); });
+  server.on("/settings/save_pin", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,i,t,2); });
+  server.on("/settings/save_pass", HTTP_POST, [](AsyncWebServerRequest* r){}, NULL, [saveHandler](AsyncWebServerRequest* r, uint8_t* d, size_t l, size_t i, size_t t){ saveHandler(r,d,l,i,t,3); });
 
   // --- Settings GET APIs ---
   
   server.on("/settings/get_stat", HTTP_GET, [](AsyncWebServerRequest *request){
     if(wifiIsWorking) {
-       request->send(401);
+       request->send(503);
+    } else if (WiFi.status() != WL_CONNECTED) {
+       JsonDocument doc;
+       doc["ip"] = WiFi.softAPIP().toString();
+       String output; serializeJson(doc, output);
+       request->send(200, "application/json", output);
     } else {
-    if(WiFi.status() != WL_CONNECTED) {
-       request->send(202, "application/json", "{\"ip\":\"" + WiFi.softAPIP().toString() + "\"}");
-    } else {
-    wifiIsWorking = true;
-    JsonDocument doc;
-    doc["ssid"] = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : "";
-    doc["ip"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
-    doc["status"] = (WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED";
-    doc["rssi"] = WiFi.RSSI();
-    String output; serializeJson(doc, output);
-    request->send(202, "application/json", output);
-    wifiIsWorking = false;
-    }}
+       JsonDocument doc;
+       doc["ssid"] = WiFi.SSID();
+       doc["ip"] = WiFi.localIP().toString();
+       doc["status"] = "CONNECTED";
+       doc["rssi"] = WiFi.RSSI();
+       String output; serializeJson(doc, output);
+       request->send(200, "application/json", output);
+    }
   });
   
   server.on("/settings/scan_wifi", HTTP_GET, [](AsyncWebServerRequest *request){
     if(wifiIsWorking) {
-       request->send(401);
+       request->send(503);
     } else {
     int n = WiFi.scanComplete();
     if(n == WIFI_SCAN_FAILED) {        // لم يبدأ مسح بعد
@@ -859,17 +1092,17 @@ void setupServerWeb() {
        WiFi.scanDelete();
        WiFi.scanNetworks(true);
        String output; serializeJson(doc, output);
-       request->send(202, "application/json", output);
+       request->send(200, "application/json", output);
     }
     }
   });
   
   server.on("/settings/get_wifi", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAdminToken(request)) { request->send(401); return; }
-    char m[33] = "", ap_s[33] = "", ap_p[33] = "";
-    getJson("/settings.json", "0_Obj.wifi.mode", m, 33);
-    getJson("/settings.json", "0_Obj.wifi.ap_ssid", ap_s, 33);
-    getJson("/settings.json", "0_Obj.wifi.ap_pass", ap_p, 33);
+    char m[33] = "", ap_s[33] = "", ap_p[65] = "";
+    getJson("/settings.json", "0_Obj.wifi.mode", m, sizeof(m));
+    getJson("/settings.json", "0_Obj.wifi.ap_ssid", ap_s, sizeof(ap_s));
+    getJson("/settings.json", "0_Obj.wifi.ap_pass", ap_p, sizeof(ap_p));
     JsonDocument nd; loadNets(nd);
     JsonDocument r; r["mode"] = m; r["ap_ssid"] = ap_s; r["ap_pass"] = ap_p; r["nets"] = nd;
     String res; serializeJson(r, res);
@@ -878,92 +1111,165 @@ void setupServerWeb() {
 
   server.on("/settings/get_comm", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAnyToken(request)) { request->send(401); return; }
-    char l[33] = "", h[33] = "", res[128];
-    getJson("/settings.json", "0_Obj.localhost", l, 33);
-    getJson("/settings.json", "0_Obj.internethost", h, 33);
-    snprintf(res, sizeof(res), "{\"localhost\":\"%s\",\"host\":\"%s\"}", l, h);
+    char l[40] = "", h[65] = "";
+    getJson("/settings.json", "0_Obj.localhost", l, sizeof(l));
+    getJson("/settings.json", "0_Obj.internethost", h, sizeof(h));
+    JsonDocument d; d["localhost"] = l; d["host"] = h;
+    String res; serializeJson(d, res);
     request->send(200, "application/json", res);
   });
 
   server.on("/settings/get_pin", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAnyToken(request)) { request->send(401); return; }
-    char p[33] = "", res[64];
-    getJson("/settings.json", "0_Obj.pinreset", p, 33);
-    snprintf(res, sizeof(res), "{\"pin\":\"%s\"}", p);
+    char p[33] = "";
+    getJson("/settings.json", "0_Obj.pinreset", p, sizeof(p));
+    JsonDocument d; d["pin"] = p;
+    String res; serializeJson(d, res);
     request->send(200, "application/json", res);
   });
 
   server.on("/settings/get_pass", HTTP_GET, [](AsyncWebServerRequest *request){
     if (isAdminToken(request)) {
-        char ap[33] = "", up[33] = "", res[128];
-        getJson("/users.json", "0_Obj.password", ap, 33);
-        getJson("/users.json", "1_Obj.password", up, 33);
-        snprintf(res, sizeof(res), "{\"ap\":\"%s\",\"up\":\"%s\"}", ap, up);
+        char ap[97] = "", up[97] = "";
+        bool hasAp = getJson("/users.json", "0_Obj.password", ap, sizeof(ap)) && ap[0] != '\0';
+        bool hasUp = getJson("/users.json", "1_Obj.password", up, sizeof(up)) && up[0] != '\0';
+        bool hasEm = LittleFS.exists("/em_key");
+        JsonDocument d; d["hasAp"] = hasAp; d["hasUp"] = hasUp; d["hasEm"] = hasEm;
+        d["ap"] = ""; d["up"] = ""; d["em"] = "";
+        String res; serializeJson(d, res);
         request->send(200, "application/json", res);
     } else { request->send(401); }
   });
 
   server.on("/hdusage", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!isAnyToken(request)) { request->send(401); return; }
-    char r[16], s[16], res[256];
+    char r[16], s[16];
     RamUsage(r, 16); StorageUsage(s, 16);
     int wp; const char* wr = wakeReason(&wp);
-    snprintf(res, sizeof(res), "{\"RamUsage\":\"%s\",\"StorageUsage\":\"%s\",\"Version\":\"%s\",\"Uptime\":%lu,\"Temp\":%.1f,\"Wake\":\"%s\",\"WakePin\":%d}", r, s, FW_VERSION, (unsigned long)uptimeSec(), (double)temperatureRead(), wr, wp);
+    JsonDocument d;
+    d["RamUsage"] = r; d["StorageUsage"] = s; d["Version"] = FW_VERSION;
+    d["Uptime"] = uptimeSec();
+    char tb[16]; snprintf(tb, sizeof(tb), "%.1f", (double)temperatureRead());
+    d["Temp"] = atof(tb);
+    d["Wake"] = wr; d["WakePin"] = wp;
+    String res; serializeJson(d, res);
     request->send(200, "application/json", res);
   });
 
   // --- OTA (admin، أو مفتاح الطوارئ للواجهة فقط): POST /api/ota?type=fw  (firmware.bin)  أو  type=fs  (littlefs.bin) ---
   server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!otaAllowed(request)) { request->send(401); return; }
-    bool started = otaStarted;
-    otaStarted = false;
-    if (otaError[0]) {
-      if (otaFsUnmounted) { LittleFS.begin(false); otaFsUnmounted = false; } // أعد تركيب النظام بعد الفشل
-      request->send(500, "application/json", String("{\"error\":\"") + otaError + "\"}");
+    OtaReq* ota = (OtaReq*)request->_tempObject;
+    if (!ota) { request->send(400, "application/json", "{\"error\":\"no file\"}"); return; }
+    if (ota->busyReject) { request->send(409, "application/json", "{\"error\":\"ota busy\"}"); return; }
+    bool active = ota->active, started = ota->started, finished = ota->finished, unmounted = ota->fsUnmounted;
+    char err[64]; strlcpy(err, ota->err, sizeof(err));
+    ota->active = false;
+    if (active) {
+      if (started) Update.abort();
+      if (unmounted && (err[0] || !finished)) LittleFS.begin(false);
+      portENTER_CRITICAL(&otaMux);
+      otaBusy = false;
+      portEXIT_CRITICAL(&otaMux);
+    }
+    if (err[0]) {
+      JsonDocument d; d["error"] = err;
+      String out; serializeJson(d, out);
+      request->send(500, "application/json", out);
       return;
     }
-    if (!started) { request->send(400, "application/json", "{\"error\":\"no file\"}"); return; }
+    if (!finished) { request->send(400, "application/json", "{\"error\":\"no file\"}"); return; }
     request->send(200, "application/json", "{\"ok\":true}");
     restartPending = true;
   }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!index) {
-      if (!otaAllowed(request)) return;               // غير مخوّل: لا نمسّ حالة رفع جارٍ (المعالج النهائي يردّ 401)
-      otaError[0] = 0;
-      otaStarted = false;
-      bool fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
-      if (!fs && (len == 0 || data[0] != 0xE9)) { strlcpy(otaError, "not a firmware image", sizeof(otaError)); return; }
-      if (fs) {
-        LittleFS.end(); otaFsUnmounted = true;
-        request->onDisconnect([]() {                  // انقطع الرفع في المنتصف: أعد تركيب النظام
-          if (otaFsUnmounted) { if (Update.isRunning()) Update.abort(); LittleFS.begin(false); otaFsUnmounted = false; }
-        });
-      }
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN, fs ? U_SPIFFS : U_FLASH)) {
-        strlcpy(otaError, Update.errorString(), sizeof(otaError));
+      if (!otaAllowed(request)) return;
+      OtaReq* ota = (OtaReq*)calloc(1, sizeof(OtaReq));
+      if (!ota) return;
+      request->_tempObject = ota;
+      bool alreadyBusy = false;
+      portENTER_CRITICAL(&otaMux);
+      if (otaBusy) alreadyBusy = true;
+      else otaBusy = true;
+      portEXIT_CRITICAL(&otaMux);
+      if (alreadyBusy) { ota->busyReject = true; strlcpy(ota->err, "ota busy", sizeof(ota->err)); return; }
+      ota->active = true;
+      request->onDisconnect([ota]() {
+        if (!ota->active) return;
+        ota->active = false;
+        if (ota->started) Update.abort();
+        if (ota->fsUnmounted) LittleFS.begin(false);
+        portENTER_CRITICAL(&otaMux);
+        otaBusy = false;
+        portEXIT_CRITICAL(&otaMux);
+      });
+      ota->fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
+      if (!ota->fs && len > 0 && data[0] != 0xE9) { strlcpy(ota->err, "not a firmware image", sizeof(ota->err)); return; }
+      if (ota->fs) { luaeng_stop_all(); delay(50); LittleFS.end(); ota->fsUnmounted = true; }
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, ota->fs ? U_SPIFFS : U_FLASH)) {
+        strlcpy(ota->err, Update.errorString(), sizeof(ota->err));
         return;
       }
-      otaStarted = true;
+      ota->started = true;
     }
-    if (otaError[0] || !otaStarted) return;
-    if (Update.write(data, len) != len) {
-      strlcpy(otaError, Update.errorString(), sizeof(otaError));
-      Update.abort();
-      return;
+    OtaReq* ota = (OtaReq*)request->_tempObject;
+    if (!ota || !ota->active || ota->err[0] || !ota->started) return;
+    if (len > 0) {
+      if (!ota->sawBytes) {
+        ota->sawBytes = true;
+        if (!ota->fs && data[0] != 0xE9) {
+          strlcpy(ota->err, "not a firmware image", sizeof(ota->err));
+          Update.abort();
+          ota->started = false;
+          return;
+        }
+      }
+      if (Update.write(data, len) != len) {
+        strlcpy(ota->err, Update.errorString(), sizeof(ota->err));
+        Update.abort();
+        ota->started = false;
+        return;
+      }
     }
-    if (final && !Update.end(true)) {
-      strlcpy(otaError, Update.errorString(), sizeof(otaError));
+    if (final) {
+      if (!ota->sawBytes) {
+        Update.abort();
+        ota->started = false;
+        return;
+      }
+      if (!Update.end(true)) strlcpy(ota->err, Update.errorString(), sizeof(ota->err));
+      else ota->finished = true;
+      ota->started = false;
     }
   });
 
-  // --- نسخة احتياطية (admin فقط): تنزيل واستعادة settings.json و users.json ---
+  // --- نسخة احتياطية (admin فقط): تنزيل واستعادة settings.json و users.json و wifi_nets.json ---
   server.on("/settings/backup", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
-    String s = "[]", u = "[]";
-    File f = LittleFS.open("/settings.json", "r");
-    if (f) { s = f.readString(); f.close(); }
-    f = LittleFS.open("/users.json", "r");
-    if (f) { u = f.readString(); f.close(); }
-    String out = "{\"version\":1,\"settings\":" + s + ",\"users\":" + u + "}";
+    JsonDocument doc, stDoc, usDoc, netDoc;
+    doc["version"] = 1;
+    {
+      CfgLock _lk;
+      File f = LittleFS.open("/settings.json", "r");
+      if (f) { deserializeJson(stDoc, f); f.close(); }
+      if (!stDoc.is<JsonArray>()) stDoc.to<JsonArray>();
+      f = LittleFS.open("/users.json", "r");
+      if (f) { deserializeJson(usDoc, f); f.close(); }
+      if (!usDoc.is<JsonArray>()) usDoc.to<JsonArray>();
+      doc["settings"] = stDoc;
+      doc["users"] = usDoc;
+      f = LittleFS.open(NETS_FILE, "r");
+      if (f) {
+        if (!deserializeJson(netDoc, f) && netDoc.is<JsonArray>()) doc["nets"] = netDoc;
+        f.close();
+      }
+      f = LittleFS.open("/em_key", "r");
+      if (f) {
+        String k = f.readString(); k.trim(); f.close();
+        if (k.length()) doc["em_key"] = k;
+      }
+    }
+    String out; serializeJson(doc, out);
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", out);
     response->addHeader("Content-Disposition", "attachment; filename=esp32-backup.json");
     request->send(response);
@@ -971,18 +1277,11 @@ void setupServerWeb() {
 
   server.on("/settings/restore", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    if (!isAdminToken(request)) { request->send(401); return; }
-    if (total == 0 || total > 4096) { request->send(413); return; }
-    // الجسم قد يصل على أجزاء: اجمعه ثم عالجه عند اكتماله
-    if (index == 0) request->_tempObject = malloc(total + 1);
-    char* buf = (char*)request->_tempObject;
-    if (!buf) { request->send(500); return; }
-    memcpy(buf + index, data, len);
-    if (index + len < total) return;
-    buf[total] = 0;
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (!collectBody(request, data, len, index, total, 4096)) return;
 
     JsonDocument doc;
-    if (deserializeJson(doc, buf, total)) { request->send(400, "application/json", "{\"error\":\"invalid json\"}"); return; }
+    if (deserializeJson(doc, (const char*)request->_tempObject, total)) { request->send(400, "application/json", "{\"error\":\"invalid json\"}"); return; }
     JsonArray st = doc["settings"].as<JsonArray>();
     JsonArray us = doc["users"].as<JsonArray>();
     bool valid = !st.isNull() && st.size() >= 1 && st[0].is<JsonObject>()
@@ -991,12 +1290,57 @@ void setupServerWeb() {
               && us[1]["username"].is<const char*>() && us[1]["password"].is<const char*>();
     if (!valid) { request->send(400, "application/json", "{\"error\":\"invalid backup\"}"); return; }
 
-    File f = LittleFS.open("/settings.json", "w");
-    if (!f) { request->send(500); return; }
-    serializeJsonPretty(st, f); f.close();
-    f = LittleFS.open("/users.json", "w");
-    if (!f) { request->send(500); return; }
-    serializeJsonPretty(us, f); f.close();
+    // تعمية كلمات المرور إن كانت من نسخة قديمة غير معمّاة
+    char ha[97] = "", hu[97] = "";
+    const char* p0 = us[0]["password"].as<const char*>();
+    const char* p1 = us[1]["password"].as<const char*>();
+    if (strncmp(p0, "sha256$", 7) != 0) {
+      if (!*p0 || !hashPassword(p0, ha, sizeof(ha))) { request->send(400, "application/json", "{\"error\":\"invalid backup\"}"); return; }
+      us[0]["password"] = (const char*)ha;
+    }
+    if (strncmp(p1, "sha256$", 7) != 0) {
+      if (!*p1 || !hashPassword(p1, hu, sizeof(hu))) { request->send(400, "application/json", "{\"error\":\"invalid backup\"}"); return; }
+      us[1]["password"] = (const char*)hu;
+    }
+
+    {
+      CfgLock _lk;
+      File f = LittleFS.open("/settings.json", "w");
+      if (!f) { request->send(500); return; }
+      size_t ws = serializeJsonPretty(st, f); f.close();
+      if (ws == 0) { request->send(500); return; }
+      f = LittleFS.open("/users.json", "w");
+      if (!f) { request->send(500); return; }
+      size_t wu = serializeJsonPretty(us, f); f.close();
+      if (wu == 0) { request->send(500); return; }
+      if (doc["nets"].is<JsonArray>()) {
+        JsonDocument nd; JsonArray out = nd.to<JsonArray>();
+        for (JsonObject n : doc["nets"].as<JsonArray>()) {
+          const char* ss = n["ssid"] | ""; const char* pw = n["pass"] | "";
+          if (!*ss || strlen(ss) > 32 || strlen(pw) > 63 || (int)out.size() >= MAX_NETS) continue;
+          JsonObject o = out.add<JsonObject>(); o["ssid"] = ss; o["pass"] = pw;
+        }
+        File nf = LittleFS.open(NETS_FILE, "w");
+        if (nf) { serializeJson(nd, nf); nf.close(); }
+      } else if (LittleFS.exists(NETS_FILE)) {
+        LittleFS.remove(NETS_FILE);
+      }
+      if (doc["em_key"].is<const char*>()) {
+        const char* ek = doc["em_key"].as<const char*>();
+        if (*ek) {
+          char hk[97] = "";
+          const char* toWrite = ek;
+          if (strncmp(ek, "sha256$", 7) != 0) {
+            if (strlen(ek) < 4 || strlen(ek) > 31 || !hashPassword(ek, hk, sizeof(hk))) {
+              request->send(400, "application/json", "{\"error\":\"invalid backup\"}"); return;
+            }
+            toWrite = hk;
+          }
+          File kf = LittleFS.open("/em_key", "w");
+          if (kf) { kf.print(toWrite); kf.close(); }
+        }
+      }
+    }
 
     request->send(200, "application/json", "{\"ok\":true}");
     restartPending = true;
@@ -1013,19 +1357,33 @@ void setupServerWeb() {
   // --- النوم العميق (admin): /settings/sleep?secs=60&pins=0,3&level=1 ---
   server.on("/settings/sleep", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!isAdminToken(request)) { request->send(401); return; }
-    uint32_t secs = request->hasParam("secs") ? (uint32_t)request->getParam("secs")->value().toInt() : 0;
-    int level = request->hasParam("level") ? request->getParam("level")->value().toInt() : 1;
+    long secsL = 0, levelL = 1;
+    if (request->hasParam("secs")) {
+      if (!parseLongStrict(request->getParam("secs")->value(), secsL) || secsL < 0 || secsL > 30L * 86400L) {
+        request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return;
+      }
+    }
+    if (request->hasParam("level")) {
+      if (!parseLongStrict(request->getParam("level")->value(), levelL) || (levelL != 0 && levelL != 1)) {
+        request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return;
+      }
+    }
     uint32_t mask = 0;
     if (request->hasParam("pins")) {
       String pins = request->getParam("pins")->value();
-      for (int i = 0; i < (int)pins.length(); ) {
-        int j = pins.indexOf(',', i); if (j < 0) j = pins.length();
-        int n = pins.substring(i, j).toInt();
-        if (j > i && n >= 0 && n <= 5) mask |= 1u << n;
-        i = j + 1;
+      if (pins.length() > 0) {
+        for (int i = 0; i < (int)pins.length(); ) {
+          int j = pins.indexOf(',', i); if (j < 0) j = pins.length();
+          long n = -1;
+          if (j <= i || !parseLongStrict(pins.substring(i, j), n) || n < 0 || n > 5) {
+            request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return;
+          }
+          mask |= 1u << (uint32_t)n;
+          i = j + 1;
+        }
       }
     }
-    if (!requestDeepSleep(secs, mask, level)) { request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return; }
+    if (!requestDeepSleep((uint32_t)secsL, mask, (int)levelL)) { request->send(400, "application/json", "{\"error\":\"bad_args\"}"); return; }
     request->send(200, "application/json", "{\"ok\":true}");
   });
 
@@ -1053,10 +1411,10 @@ void setupServerWeb() {
 
   server.on("/terminal/cmd", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    if (!isAdminToken(request)) { request->send(401); return; }
-    if (index != 0 || len != total || total > 256) { request->send(413); return; }
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (!collectBody(request, data, len, index, total, 512)) return;
     JsonDocument d;
-    if (deserializeJson(d, data, len)) { request->send(400); return; }
+    if (deserializeJson(d, (const char*)request->_tempObject, total)) { request->send(400); return; }
     const char* c = d["cmd"];
     if (!c) { request->send(400); return; }
     String out = runCommand(String(c));
@@ -1076,16 +1434,8 @@ void setupServerWeb() {
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     // الجسم = نص السكريبت الخام، والاسم في ?name=
     if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
-    if (total == 0 || total > 8192) { if (index == 0) request->send(413); return; }
-    if (index == 0) {
-      request->_tempObject = malloc(total + 1);
-      if (!request->_tempObject) { request->send(500); return; }
-    }
+    if (!collectBody(request, data, len, index, total, 8192)) return;
     char* buf = (char*)request->_tempObject;
-    if (!buf) return;
-    memcpy(buf + index, data, len);
-    if (index + len < total) return;
-    buf[total] = 0;
     const char* name = request->hasParam("name") ? request->getParam("name")->value().c_str() : "";
     if (!luaeng_valid_name(name)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
     if (request->hasParam("lib") && request->getParam("lib")->value() == "1") {   // حفظ مكتبة require بلا تشغيل
@@ -1104,7 +1454,9 @@ void setupServerWeb() {
   // ---- الدرايفرات الموقّعة (.drv) ----
   server.on("/drv/mode", HTTP_GET, [](AsyncWebServerRequest* r) {
     if (!isAnyToken(r)) { r->send(401); return; }
-    r->send(200, "application/json", String("{\"mode\":\"") + drv_get_mode() + "\",\"exec\":" + (drv_exec_available() ? "true" : "false") + "}");
+    JsonDocument d; d["mode"] = drv_get_mode(); d["exec"] = drv_exec_available();
+    String out; serializeJson(d, out);
+    r->send(200, "application/json", out);
   });
   server.on("/drv/mode", HTTP_POST, [](AsyncWebServerRequest* r) {
     if (!isAdminToken(r)) { r->send(401); return; }
@@ -1127,7 +1479,8 @@ void setupServerWeb() {
     }
     uint8_t* buf = (uint8_t*)request->_tempObject;
     if (!buf) return;
-    memcpy(buf + index, data, len);
+    if (index + len > total) { request->send(400, "application/json", "{\"ok\":false,\"error\":\"bad chunk\"}"); return; }
+    if (len > 0) memcpy(buf + index, data, len);
     if (index + len < total) return;
     String err;
     bool ok = drv_install(buf, total, &err);
@@ -1198,19 +1551,20 @@ void setupServerWeb() {
   });
   server.on("/ui/event", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
   [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    if (!isAdminToken(request)) { request->send(401); return; }
-    if (index != 0 || len != total || total > 46) { request->send(413); return; }
+    if (!isAdminToken(request)) { if (index == 0) request->send(401); return; }
+    if (index != 0 || len != total || total > 46) { if (index == 0) request->send(413); return; }
     if (!request->hasParam("p") || !request->hasParam("n")) { request->send(400); return; }
+    long panel = -1;
+    if (!parseLongStrict(request->getParam("p")->value(), panel)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
     char val[48]; memcpy(val, data, len); val[len] = 0;
-    bool ok = luaeng_ui_event(atoi(request->getParam("p")->value().c_str()), request->getParam("n")->value().c_str(), val);
+    bool ok = luaeng_ui_event((int)panel, request->getParam("n")->value().c_str(), val);
     request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
   });
 
-  // CORS Options
+  // Fallback للواجهة المفقودة
   server.onNotFound([](AsyncWebServerRequest *request){
-    if (request->method() == HTTP_OPTIONS) request->send(200);
     // فُقد /app/index.html أو أول تشغيل: اعرض نافذة مفتاح الطوارئ بدل 404
-    else if (request->method() == HTTP_GET && request->url() == "/") request->send(gzPage(request, 200, em_login_gz, em_login_gz_len));
+    if (request->method() == HTTP_GET && request->url() == "/") request->send(gzPage(request, 200, em_login_gz, em_login_gz_len));
     else request->send(404);
   });
 }
@@ -1218,12 +1572,18 @@ void setupServerWeb() {
 // --- Setup & Loop ---
 
 void setup() {
+  if (!cfgMux) cfgMux = xSemaphoreCreateRecursiveMutex();
   gpio_deep_sleep_hold_dis();                      // فكّ تثبيت الأرجل بعد الاستيقاظ من النوم العميق
   for (int i = 0; i < 6; i++) gpio_hold_dis((gpio_num_t)i);
   generateToken(emSess, sizeof(emSess));
   if (LittleFS.begin(true)) {                      // مفتاح الطوارئ المخصص (اختياري)
     File kf = LittleFS.open("/em_key", "r");
-    if (kf) { String k = kf.readString(); k.trim(); if (k.length() >= 4 && k.length() < sizeof(access_key)) strlcpy(access_key, k.c_str(), sizeof(access_key)); kf.close(); }
+    if (kf) {
+      String k = kf.readString(); k.trim(); kf.close();
+      if ((k.startsWith("sha256$") && k.length() < sizeof(access_key)) || (k.length() >= 4 && k.length() < 32)) {
+        strlcpy(access_key, k.c_str(), sizeof(access_key));
+      }
+    }
   }
   loadsetting();
   EmSetupAPI();

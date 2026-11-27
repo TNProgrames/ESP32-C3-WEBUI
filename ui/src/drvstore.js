@@ -1,12 +1,14 @@
 // استقبال الدرايفرات من GitHub (يجلبها المتصفح لا الجهاز) وتثبيتها على الجهاز.
-// الفهرس drivers/build/index.json يُنتجه tools/drv/build_index.py ويحوي لكل درايفر:
+// الفهرس drivers/apps/index.json يُنتجه tools/drv/build_index.py ويحوي لكل درايفر:
 //   name, version, api, size, mem, sha256, file (نسبي لمكان الفهرس), info, methods[{name,sig}]
 // التحقق الحاسم من التوقيع يتم على الجهاز (/drv/install)؛ فحص sha256 هنا اختياري لكشف التنزيل التالف مبكرًا.
 import { authHeaders } from './api.js';
 
 export const DRV_MAX = 4;   // أقصى عدد درايفرات مثبّتة (DRV_MAX_LOADED في الفيرموير)
 export const REPO = 'TNProgrames/ESP32-C3-WEBUI';
-export const DEFAULT_INDEX = `https://raw.githubusercontent.com/${REPO}/main/drivers/build/index.json`;
+export const DEFAULT_INDEX = typeof location !== 'undefined' && location.origin
+  ? new URL('/drivers/apps/index.json', location.origin).href
+  : '/drivers/apps/index.json';
 
 export async function listInstalled() {
   const r = await fetch('/drv/list', { headers: authHeaders() });

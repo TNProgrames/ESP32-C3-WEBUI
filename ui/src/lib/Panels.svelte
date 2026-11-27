@@ -2,6 +2,7 @@
   import { t } from '../store.svelte.js';
   import { pn, startPanels, stopPanels, sendEvent, keyOf } from '../panels.svelte.js';
   import PageFrame from './PageFrame.svelte';
+  import Icon from './Icon.svelte';
 
   $effect(() => { startPanels(); return stopPanels; });
 
@@ -11,7 +12,7 @@
 </script>
 
 <div class="glass">
-  <h2 style="margin:0">🪟 {t('اللوحات')}</h2>
+  <h2 style="margin:0"><Icon name="layout" size={17} /> {t('اللوحات')}</h2>
   <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
     {t('اللوحات التي تنشئها السكريبتات بـ ui.panel(...). شغّل مثالًا من تبويب المختبر لتظهر هنا.')}
   </p>

@@ -3,117 +3,253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Pro Manager</title>
+    <title>ESP32-C3 · File Manager</title>
     <style>
-        :root { --bg: #0a0a0f; --panel: #16161e; --primary: #4f46e5; --danger: #ef4444; --success: #10b981; --warning: #f59e0b; --text: #f1f5f9; --border: rgba(255,255,255,0.1); }
+        :root {
+            --bg: #0b0f17;
+            --panel: #131924;
+            --panel-2: #0e141e;
+            --input: #090d14;
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.09);
+            --border-strong: rgba(255, 255, 255, 0.16);
+        }
+        [data-theme="light"] {
+            --bg: #f4f6f9;
+            --panel: #ffffff;
+            --panel-2: #f8fafc;
+            --input: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: rgba(15, 23, 42, 0.09);
+            --border-strong: rgba(15, 23, 42, 0.18);
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 15px; direction: rtl; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 16px 16px 84px;
+            direction: rtl;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container { max-width: 1120px; margin: 0 auto; }
 
-        /* Glass Panel */
-        .glass { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .glass {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        [data-theme="light"] .glass { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05); }
 
-        /* Header & Buttons */
-        .header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; }
-        .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
-        .btn { border: none; border-radius: 10px; padding: 10px 15px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; transition: 0.2s; color: white; text-decoration: none; }
+        .header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; }
+        .brand { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+        .logo { width: 40px; height: 40px; flex: none; }
+        .storage-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+        .bar { width: 110px; height: 6px; border-radius: 4px; background: rgba(148, 163, 184, 0.2); overflow: hidden; }
+        .bar > div { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease; border-radius: 4px; }
 
-        .btn-indigo { background: var(--primary); } .btn-indigo:hover { background: #4338ca; }
-        .btn-emerald { background: var(--success); } .btn-emerald:hover { background: #059669; }
-        .btn-red { background: var(--danger); } .btn-red:hover { background: #dc2626; }
-        .btn-amber { background: var(--warning); color: #000; } .btn-amber:hover { background: #d97706; }
-        .btn-ghost { background: rgba(255,255,255,0.05); color: #94a3b8; } .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 7px; }
+        .btn {
+            border: 1px solid transparent;
+            border-radius: 9px;
+            padding: 8px 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 12.5px;
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+            color: #fff;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-indigo { background: var(--primary); } .btn-indigo:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn-emerald { background: var(--success); } .btn-emerald:hover:not(:disabled) { background: #059669; }
+        .btn-red { background: var(--danger); } .btn-red:hover:not(:disabled) { background: #dc2626; }
+        .btn-amber { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); color: var(--warning); }
+        .btn-amber:hover:not(:disabled) { background: rgba(245, 158, 11, 0.24); }
+        .btn-ghost { background: rgba(255, 255, 255, 0.04); border-color: var(--border); color: var(--muted); }
+        .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); color: var(--text); border-color: var(--border-strong); }
+        [data-theme="light"] .btn-ghost { background: rgba(15, 23, 42, 0.04); }
+        [data-theme="light"] .btn-ghost:hover:not(:disabled) { background: rgba(15, 23, 42, 0.08); }
+        .btn-active { background: rgba(79, 70, 229, 0.16); border-color: rgba(79, 70, 229, 0.45); color: var(--text); }
+        .icon-btn { padding: 7px 8px; }
+        :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-        .icon { width: 18px; height: 18px; fill: currentColor; }
+        .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; flex: none; display: inline-block; vertical-align: middle; }
 
-        /* Path Bar */
-        .path-bar { background: rgba(255,255,255,0.03); padding: 10px 20px; border-radius: 50px; font-size: 13px; font-weight: bold; color: var(--primary); margin-bottom: 15px; display: inline-block; }
+        /* Breadcrumbs & Notice */
+        .toolbar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+        .path-bar {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 7px 12px;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .crumb { cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; transition: color 0.15s; }
+        .crumb:hover, .crumb.curr { color: var(--primary); }
+        .toast { font-size: 12px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); display: none; align-items: center; gap: 6px; }
+        .toast.ok { color: var(--success); border-color: rgba(16, 185, 129, 0.35); }
+        .toast.err { color: var(--danger); border-color: rgba(239, 68, 68, 0.35); }
 
         /* Table */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { text-align: right; padding: 15px; font-size: 11px; color: #64748b; border-bottom: 2px solid var(--border); }
-        td { padding: 12px 15px; border-bottom: 1px solid var(--border); }
-        .file-row:hover { background: rgba(255,255,255,0.02); }
-        .file-item { display: flex; align-items: center; gap: 12px; cursor: pointer; }
-        .actions { display: flex; gap: 10px; justify-content: flex-end; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: start; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel-2); }
+        td { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+        tr:last-child td { border-bottom: none; }
+        .file-row { transition: background-color 0.12s; }
+        .file-row:hover { background: rgba(148, 163, 184, 0.06); }
+        .file-item { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
+        .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+        .empty-row td { text-align: center; color: var(--muted); padding: 28px 16px; font-size: 13px; }
 
-        /* Modal Editor */
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; display: none; flex-direction: column; padding: 20px; }
-        .modal-box { background: #111118; border: 1px solid var(--border); border-radius: 25px; width: 100%; max-width: 1100px; margin: auto; height: 90vh; display: flex; flex-direction: column; }
-        .modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        textarea { flex: 1; background: #000; color: #10b981; border: none; padding: 20px; font-family: 'Courier New', monospace; font-size: 14px; resize: none; outline: none; }
+        /* Modals */
+        .modal { position: fixed; inset: 0; background: rgba(6, 9, 15, 0.88); backdrop-filter: blur(4px); z-index: 1000; display: none; flex-direction: column; padding: 16px; }
+        [data-theme="light"] .modal { background: rgba(15, 23, 42, 0.45); }
+        .modal-box {
+            background: var(--panel);
+            border: 1px solid var(--border-strong);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 1100px;
+            margin: auto;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .ed-tools { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; background: var(--panel-2); }
+        .ed-tools .btn { padding: 6px 10px; font-size: 12px; }
+        .ed-select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: 12px; font-weight: 600; outline: none; cursor: pointer; }
+        .ed-select:focus { border-color: var(--primary); }
+        .find-wrap { position: relative; flex: 1; min-width: 110px; max-width: 240px; display: flex; align-items: center; }
+        .find-wrap svg { position: absolute; left: 9px; color: var(--muted); pointer-events: none; }
+        .ed-tools input { width: 100%; padding: 6px 10px 6px 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--input); color: var(--text); outline: none; direction: ltr; font-size: 12.5px; }
+        .ed-tools input:focus { border-color: var(--primary); }
+        .ed-body { flex: 1; display: flex; min-height: 0; background: #06090f; direction: ltr; --ed-fg: #e2e8f0; --ed-caret: #f8fafc; --tk-c: #64748b; --tk-s: #4ade80; --tk-n: #fb923c; --tk-k: #c084fc; --tk-t: #f472b6; --tk-f: #38bdf8; --tk-p: #fbbf24; }
+        [data-theme="light"] .ed-body { background: #fff; --ed-fg: #1e293b; --ed-caret: #0f172a; --tk-c: #6b7280; --tk-s: #16a34a; --tk-n: #ea580c; --tk-k: #7c3aed; --tk-t: #db2777; --tk-f: #0284c7; --tk-p: #b45309; }
+        #ed-gutter { margin: 0; padding: 18px 8px 18px 12px; text-align: right; color: var(--muted); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; user-select: none; overflow: hidden; min-width: 44px; border-right: 1px solid var(--border); }
+        .ed-stage { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+        .ed-layer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 18px; border: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; line-height: 1.5; tab-size: 2; -moz-tab-size: 2; letter-spacing: 0; word-spacing: 0; font-variant-ligatures: none; white-space: pre; overflow: auto; direction: ltr; text-align: left; scrollbar-width: thin; }
+        .ed-layer.wrap { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; overflow-x: hidden; }
+        .ed-layer::-webkit-scrollbar { width: 8px; height: 8px; }
+        #ed-hl { z-index: 1; pointer-events: none; color: var(--ed-fg); background: transparent; scrollbar-color: transparent transparent; }
+        #ed-hl::-webkit-scrollbar, #ed-hl::-webkit-scrollbar-thumb { background: transparent; }
+        #editor-content { z-index: 2; background: transparent; color: transparent; caret-color: var(--ed-caret); resize: none; outline: none; }
+        #editor-content::selection { background: rgba(99, 102, 241, 0.34); color: transparent; }
+        .tk-c { color: var(--tk-c); font-style: italic; }
+        .tk-s { color: var(--tk-s); }
+        .tk-n { color: var(--tk-n); }
+        .tk-k { color: var(--tk-k); font-weight: 600; }
+        .tk-t { color: var(--tk-t); }
+        .tk-f { color: var(--tk-f); }
+        .tk-p { color: var(--tk-p); }
+        .ed-status { display: flex; justify-content: space-between; padding: 5px 16px; font: 11px monospace; color: var(--muted); border-top: 1px solid var(--border); direction: ltr; background: var(--panel-2); }
+        .dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warning); margin-inline-start: 6px; vertical-align: middle; }
+
+        /* Dialog Modal */
+        .dlg-box { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 14px; width: 100%; max-width: 400px; margin: auto; padding: 20px; }
+        .dlg-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .dlg-msg { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.55; }
+        .dlg-input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: 13.5px; outline: none; margin-bottom: 14px; direction: ltr; }
+        .dlg-input:focus { border-color: var(--primary); }
+        .dlg-acts { display: flex; justify-content: flex-end; gap: 8px; }
 
         .hidden { display: none; }
-        [data-theme="light"] { --bg: #f1f5f9; --panel: #ffffff; --text: #0f172a; --border: rgba(0,0,0,0.14); }
-        [data-theme="light"] textarea { background: #fff; color: #047857; }
-        [data-theme="light"] .modal { background: rgba(255,255,255,0.95); }
-        [data-theme="light"] .modal-box { background: #f8fafc; }
-        [data-theme="light"] .btn-ghost { background: rgba(0,0,0,0.06); color: #475569; }
-        [data-theme="light"] .glass { box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
         .fabs { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; z-index: 2000; }
-        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
-        @media (max-width: 600px) { .header { flex-direction: column; align-items: stretch; } .btn { flex: 1; justify-content: center; } }
-        .logo { width: 44px; height: 44px; flex: none; }
-        .ed-tools { display: flex; gap: 6px; padding: 8px 15px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
-        .ed-tools .btn { padding: 6px 10px; }
-        .ed-tools input { flex: 1; min-width: 80px; max-width: 220px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: #000; color: #10b981; outline: none; direction: ltr; }
-        [data-theme="light"] .ed-tools input { background: #fff; color: #047857; }
-        .ed-body { flex: 1; display: flex; min-height: 0; background: #000; direction: ltr; }
-        [data-theme="light"] .ed-body { background: #fff; }
-        #ed-gutter { margin: 0; padding: 20px 8px 20px 12px; text-align: right; color: #64748b; font: 14px/1.5 'Courier New', monospace; user-select: none; overflow: hidden; min-width: 44px; border-right: 1px solid var(--border); }
-        .ed-body textarea { line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; direction: ltr; text-align: left; }
-        .ed-body textarea.wrap { white-space: pre-wrap; word-break: break-word; }
-        .ed-status { display: flex; justify-content: space-between; padding: 4px 15px; font: 11px monospace; color: #64748b; border-top: 1px solid var(--border); direction: ltr; }
+        .fab { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
+        .fab:hover { border-color: var(--primary); }
+
+        @media (max-width: 640px) {
+            .header { flex-direction: column; align-items: stretch; }
+            .btn-group .btn { flex: 1 1 auto; }
+            th:nth-child(2), td:nth-child(2) { white-space: nowrap; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { transition-duration: 0.01ms !important; }
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <!-- Header Section -->
         <div class="glass header">
-            <div style="display:flex; align-items:center; gap:12px;">
+            <div class="brand">
                 <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><g stroke="url(#lg)" stroke-width="3" stroke-linecap="round"><path d="M15 6v6M24 6v6M33 6v6M15 36v6M24 36v6M33 36v6M6 15h6M6 24h6M6 33h6M36 15h6M36 24h6M36 33h6"/></g><rect x="11" y="11" width="26" height="26" rx="6" fill="url(#lg)"/><path d="M17 27c3-8 6 8 9 0s5-6 5-6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <div>
-                    <h2 style="font-size:16px;" data-t>مدير الملفات</h2>
-                    <p id="storage-txt" style="font-size:10px; color:#64748b; font-family:monospace;"></p>
+                    <h2 style="font-size:15px;font-weight:600" data-t>مدير الملفات</h2>
+                    <div class="storage-meta">
+                        <div class="bar"><div id="storage-bar"></div></div>
+                        <span id="storage-txt" style="font-size:11px; color:var(--muted); font-family:monospace;"></span>
+                    </div>
                 </div>
             </div>
 
             <div class="btn-group">
                 <input type="file" id="u-input" class="hidden" onchange="uploadFile()">
                 <button class="btn btn-emerald" onclick="document.getElementById('u-input').click()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/></svg> <span data-t>رفع</span>
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span data-t>رفع</span>
                 </button>
                 <button class="btn btn-indigo" onclick="createNewFile()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg> <span data-t>ملف</span>
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                    <span data-t>ملف</span>
                 </button>
                 <button class="btn btn-indigo" onclick="createNewDir()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10M15,9V12H12V14H15V17H17V14H20V12H17V9H15Z"/></svg> <span data-t>مجلد</span>
-                </button>
-                <button class="btn btn-red" onclick="formatFS()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M20.37,8.91L19.37,10.64L15.03,8.14L16.03,6.4L18.53,7.85L17.53,6.12L15.8,7.12L14.8,5.38L20,2.38L21,4.11L19.27,5.11L20.27,6.85L22.77,5.4L23.77,7.13L18.57,10.13L20.37,8.91M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg> <span data-t>تهيئة</span>
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                    <span data-t>مجلد</span>
                 </button>
                 <input type="file" id="ota-input" class="hidden" accept=".bin" onchange="otaFs()">
                 <button class="btn btn-amber" onclick="document.getElementById('ota-input').click()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg> <span data-t>تحديث الواجهة</span>
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M12 14.5 2.5 9.5 12 4.5l9.5 5-9.5 5Z" fill="#f59e0b"/><path d="m2.5 13.2 9.5 4.8 9.5-4.8" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="m2.5 16.8 9.5 4.7 9.5-4.7" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span data-t>تحديث الواجهة</span>
+                </button>
+                <button class="btn btn-red" onclick="formatFS()">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4.5v2H3.5V5H8l1-2Z" fill="rgba(255,255,255,.85)"/><path d="M5.5 8h13l-1 11.5a2 2 0 0 1-2 1.8h-7a2 2 0 0 1-2-1.8L5.5 8Z" fill="currentColor"/></svg>
+                    <span data-t>تهيئة</span>
                 </button>
                 <button class="btn btn-ghost" onclick="logout()">
-                    <svg class="icon" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg> <span data-t>خروج</span>
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5" stroke="#94a3b8" stroke-width="2.3" stroke-linecap="round"/><path d="M15.5 7.5 21 12l-5.5 4.5v-3H9v-3h6.5v-3Z" fill="#f43f5e"/></svg>
+                    <span data-t>خروج</span>
                 </button>
             </div>
         </div>
 
-        <!-- Breadcrumbs -->
-        <div id="breadcrumbs" class="path-bar"></div>
+        <div class="toolbar-row">
+            <div id="breadcrumbs" class="path-bar"></div>
+            <div id="toast" class="toast"></div>
+        </div>
 
-        <!-- File List -->
         <div class="glass" style="padding:0; overflow-x:auto;">
             <table>
                 <thead>
                     <tr>
-                        <th style="width:50%" data-t>الاسم</th>
+                        <th style="width:58%" data-t>الاسم</th>
                         <th style="text-align:center" data-t>الحجم</th>
-                        <th style="text-align:center" data-t>الإجراءات</th>
+                        <th style="text-align:end" data-t>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody id="file-list"></tbody>
@@ -125,46 +261,105 @@
     <div id="editor-modal" class="modal">
         <div class="modal-box">
             <div class="modal-header">
-                <span><span id="editor-title" style="color:var(--primary); font-family:monospace;"></span><b id="ed-dirty" style="color:var(--warning);display:none"> ●</b></span>
-                <button class="btn btn-ghost" onclick="closeEditor()" data-t>إغلاق ✕</button>
+                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    <span id="editor-title" style="color:var(--primary); font-family:monospace;font-size:13px"></span>
+                    <span id="ed-dirty" class="dot"></span>
+                </span>
+                <button class="btn btn-ghost" onclick="closeEditor()">
+                    <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span data-t>إغلاق</span>
+                </button>
             </div>
             <div class="ed-tools">
-                <button class="btn btn-ghost" onclick="edFont(-1)" aria-label="smaller">A−</button>
+                <button class="btn btn-ghost" onclick="edFont(-1)" aria-label="smaller">A-</button>
                 <button class="btn btn-ghost" onclick="edFont(1)" aria-label="larger">A+</button>
-                <button class="btn btn-ghost" id="ed-wrap" onclick="edWrap()" data-t>التفاف</button>
-                <input id="ed-find" placeholder="🔍" onkeydown="if(event.key==='Enter'){event.preventDefault();edFind(event.shiftKey)}">
-                <button class="btn btn-ghost" onclick="edFind(false)">↓</button>
-                <button class="btn btn-ghost" onclick="edFind(true)">↑</button>
+                <button class="btn btn-ghost" id="ed-wrap" onclick="edWrap()">
+                    <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    <span data-t>التفاف</span>
+                </button>
+                <div class="find-wrap">
+                    <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input id="ed-find" placeholder="Find..." onkeydown="if(event.key==='Enter'){event.preventDefault();edFind(event.shiftKey)}">
+                </div>
+                <select id="ed-lang" class="ed-select" onchange="edSetLang(this.value)" aria-label="syntax language">
+                    <option value="plain">Text</option>
+                    <option value="lua">Lua</option>
+                    <option value="json">JSON</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                    <option value="js">JS</option>
+                    <option value="python">Python</option>
+                    <option value="c">C</option>
+                    <option value="cpp">C++</option>
+                </select>
+                <button class="btn btn-ghost icon-btn" onclick="edFind(false)" aria-label="next">
+                    <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </button>
+                <button class="btn btn-ghost icon-btn" onclick="edFind(true)" aria-label="previous">
+                    <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
             </div>
             <div class="ed-body">
                 <pre id="ed-gutter" aria-hidden="true">1</pre>
-                <textarea id="editor-content" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+                <div class="ed-stage">
+                    <pre id="ed-hl" class="ed-layer" aria-hidden="true"></pre>
+                    <textarea id="editor-content" class="ed-layer" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+                </div>
             </div>
             <div class="ed-status"><span id="ed-pos">1:1</span><span id="ed-info"></span></div>
-            <div style="padding:12px 15px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
-                <button class="btn btn-indigo" onclick="saveFile()" style="padding:12px 40px;" data-t>حفظ الملف</button>
+            <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn btn-indigo" onclick="saveFile()" style="padding:9px 26px;">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span data-t>حفظ الملف</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm / Prompt Dialog -->
+    <div id="dlg-modal" class="modal" role="dialog" aria-modal="true">
+        <div class="dlg-box">
+            <div class="dlg-title" id="dlg-title"></div>
+            <div class="dlg-msg" id="dlg-msg"></div>
+            <input class="dlg-input hidden" id="dlg-input" autocomplete="off" spellcheck="false" />
+            <div class="dlg-acts">
+                <button type="button" class="btn btn-ghost" id="dlg-cancel" data-t>إلغاء</button>
+                <button type="button" class="btn btn-indigo" id="dlg-ok" data-t>موافق</button>
             </div>
         </div>
     </div>
 
     <div class="fabs">
         <button class="fab" id="fab-lang" onclick="toggleLang()" aria-label="language">EN</button>
-        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme">☀️</button>
+        <button class="fab" id="fab-theme" onclick="toggleTheme()" aria-label="theme"></button>
     </div>
 
     <script>
         let currentPath = "/";
 
-        // --- اللغة والمظهر ---
+        const svgSun = '<svg class="ic" style="width:18px;height:18px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#f59e0b"/><path d="M12 2v2.4M12 19.6V22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M2 12h2.4M19.6 12H22M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7" stroke="#fbbf24" stroke-width="2.3" stroke-linecap="round"/></svg>';
+        const svgMoon = '<svg class="ic" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M20.6 13.8A8.8 8.8 0 1 1 10.2 3.4a7 7 0 0 0 10.4 10.4Z" fill="#818cf8"/><circle cx="17.5" cy="5.5" r="1.4" fill="#fbbf24"/></svg>';
+        const svgHome = '<svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15v-6.5h-6v6.5H4.5A1.5 1.5 0 0 1 3 20v-9.5Z" fill="#6366f1"/></svg>';
+        const svgUp = '<svg class="ic" viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4" stroke="#38bdf8" stroke-width="2.2"/><path d="M20 20v-7a4 4 0 0 0-4-4H4" stroke="#38bdf8" stroke-width="2.2"/></svg>';
+        const svgDir = '<svg class="ic" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M2.5 6a2.2 2.2 0 0 1 2.2-2.2h4.6l2 2.4h8a2.2 2.2 0 0 1 2.2 2.2V18a2.2 2.2 0 0 1-2.2 2.2H4.7A2.2 2.2 0 0 1 2.5 18V6Z" fill="#f59e0b"/><rect x="2.5" y="8" width="19" height="12.2" rx="2.2" fill="#fbbf24"/></svg>';
+        const svgFile = '<svg class="ic" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M6 2.5h8l5.5 5.5V20a1.8 1.8 0 0 1-1.8 1.8H6A1.8 1.8 0 0 1 4.2 20V4.3A1.8 1.8 0 0 1 6 2.5Z" fill="#6366f1"/><path d="M14 2.5V8h5.5L14 2.5Z" fill="#a5b4fc"/><rect x="7.5" y="12" width="9" height="1.8" rx=".9" fill="#e0e7ff"/><rect x="7.5" y="15.5" width="6.5" height="1.8" rx=".9" fill="#c7d2fe"/></svg>';
+        const svgDL = '<svg class="ic" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="#10b981" stroke-width="2.4" stroke-linecap="round"/><path d="M10 3h4v6.5h3.7L12 15.8 6.3 9.5H10V3Z" fill="#34d399"/></svg>';
+        const svgEdit = '<svg class="ic" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M4 16.5V20h3.5L18.4 9.1l-3.5-3.5L4 16.5Z" fill="#3b82f6"/><path d="M19.8 7.7a1.5 1.5 0 0 0 0-2.1l-1.4-1.4a1.5 1.5 0 0 0-2.1 0l-1.3 1.3 3.5 3.5 1.3-1.3Z" fill="#fbbf24"/></svg>';
+        const svgDel = '<svg class="ic" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4.5v2H3.5V5H8l1-2Z" fill="#f87171"/><path d="M5.5 8h13l-1 11.5a2 2 0 0 1-2 1.8h-7a2 2 0 0 1-2-1.8L5.5 8Z" fill="#ef4444"/></svg>';
+
         const EN = {
             'مدير الملفات': 'File manager', 'رفع': 'Upload', 'ملف': 'File', 'مجلد': 'Folder', 'تهيئة': 'Format',
             'تحديث الواجهة': 'Update UI', 'خروج': 'Logout', 'الاسم': 'Name', 'الحجم': 'Size', 'الإجراءات': 'Actions',
-            'إغلاق ✕': 'Close ✕', 'التفاف': 'Wrap', 'فشل الحفظ': 'Save failed', 'سطر': 'lines', 'تعديلات غير محفوظة. إغلاق بدون حفظ؟': 'Unsaved changes. Close without saving?', 'حفظ الملف': 'Save file', 'الرئيسية': 'Home',
+            'إغلاق': 'Close', 'التفاف': 'Wrap', 'فشل الحفظ': 'Save failed', 'سطر': 'lines',
+            'تعديلات غير محفوظة. إغلاق بدون حفظ؟': 'Unsaved changes. Close without saving?',
+            'حفظ الملف': 'Save file', 'الرئيسية': 'Home', 'إلغاء': 'Cancel', 'موافق': 'Confirm',
             'اسم الملف:': 'File name:', 'اسم المجلد:': 'Folder name:', 'حذف نهائي؟': 'Delete permanently?',
             'الاسم/المسار الجديد:': 'New name/path:', 'تحذير: سيتم مسح الذاكرة بالكامل!': 'Warning: the whole filesystem will be erased!',
             'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟': 'Updating the UI replaces the whole filesystem and wipes settings and passwords. Continue?',
             'تم التحديث، يُعاد تشغيل الجهاز...': 'Updated, the device is restarting...',
-            'فشل التحديث: ': 'Update failed: ', 'انقطع الاتصال': 'Connection lost'
+            'فشل التحديث: ': 'Update failed: ', 'انقطع الاتصال': 'Connection lost',
+            'المجلد فارغ': 'Empty folder', 'تم الحفظ': 'Saved', 'تم الرفع': 'Uploaded',
+            'تم الحذف': 'Deleted', 'تمت إعادة التسمية': 'Renamed', 'تنزيل': 'Download', 'إعادة تسمية': 'Rename', 'حذف': 'Delete'
         };
         const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; };
         let lang = LS('em_lang') || 'ar';
@@ -176,21 +371,64 @@
             document.documentElement.dataset.theme = theme;
             document.querySelectorAll('[data-t]').forEach(e => { if (!e.dataset.ar) e.dataset.ar = e.textContent.trim(); e.textContent = T(e.dataset.ar); });
             document.getElementById('fab-lang').textContent = lang === 'ar' ? 'EN' : 'ع';
-            document.getElementById('fab-theme').textContent = theme === 'dark' ? '☀️' : '🌙';
+            document.getElementById('fab-theme').innerHTML = theme === 'dark' ? svgSun : svgMoon;
         }
         function toggleLang() { lang = lang === 'ar' ? 'en' : 'ar'; LS('em_lang', lang); applyUi(); loadFiles(currentPath); }
         function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; LS('em_theme', theme); applyUi(); }
 
-        // SVGs as strings for offline use
-        const svgDir = '<svg class="icon" style="color:var(--warning)" viewBox="0 0 24 24"><path d="M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10Z"/></svg>';
-        const svgFile = '<svg class="icon" style="color:var(--primary)" viewBox="0 0 24 24"><path d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z"/></svg>';
-        const svgDL = '<svg class="icon" viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"/></svg>';
-        const svgEdit = '<svg class="icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6.02 20.71,5.63L18.37,3.29C17.97,2.9 17.34,2.9 16.95,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>';
-        const svgDel = '<svg class="icon" viewBox="0 0 24 24"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>';
+        let toastTimer = 0;
+        function notify(msg, isErr = false) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'toast ' + (isErr ? 'err' : 'ok');
+            el.style.display = 'inline-flex';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+        }
+
+        function askDialog({ title, message = '', inputVal = null, danger = false }) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('dlg-modal');
+                const tEl = document.getElementById('dlg-title');
+                const mEl = document.getElementById('dlg-msg');
+                const inp = document.getElementById('dlg-input');
+                const okBtn = document.getElementById('dlg-ok');
+                const cancelBtn = document.getElementById('dlg-cancel');
+
+                tEl.textContent = title;
+                mEl.textContent = message;
+                mEl.style.display = message ? 'block' : 'none';
+                okBtn.className = 'btn ' + (danger ? 'btn-red' : 'btn-indigo');
+
+                if (inputVal !== null) {
+                    inp.classList.remove('hidden');
+                    inp.value = inputVal;
+                } else {
+                    inp.classList.add('hidden');
+                }
+
+                const finish = (val) => {
+                    modal.style.display = 'none';
+                    okBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    inp.onkeydown = null;
+                    modal.onkeydown = null;
+                    resolve(val);
+                };
+
+                okBtn.onclick = () => finish(inputVal !== null ? inp.value.trim() : true);
+                cancelBtn.onclick = () => finish(inputVal !== null ? null : false);
+                inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); } else if (e.key === 'Escape') cancelBtn.click(); };
+                modal.onkeydown = (e) => { if (e.key === 'Escape') cancelBtn.click(); };
+
+                modal.style.display = 'flex';
+                if (inputVal !== null) { inp.focus(); inp.select(); } else okBtn.focus();
+            });
+        }
 
         async function request(url, method = 'GET', body = null) {
             const res = await fetch(url, { method, body });
-            if (res.status === 404) { window.location.href="/em"; return null; }
+            if (res.status === 404 || res.status === 403) { window.location.href = "/em"; return null; }
             return res;
         }
 
@@ -200,75 +438,148 @@
             if (!res) return;
             const data = await res.json();
 
-            document.getElementById('storage-txt').innerText = `USED: ${(data.used/1024).toFixed(1)}KB / TOTAL: ${(data.total/1024).toFixed(1)}KB`;
+            const pct = data.total ? Math.min(100, Math.round((data.used / data.total) * 100)) : 0;
+            const bar = document.getElementById('storage-bar');
+            bar.style.width = pct + '%';
+            bar.style.background = pct > 90 ? 'var(--danger)' : pct > 75 ? 'var(--warning)' : 'var(--primary)';
+            document.getElementById('storage-txt').innerText = `${(data.used / 1024).toFixed(1)} / ${(data.total / 1024).toFixed(1)} KB (${pct}%)`;
 
             const tbody = document.getElementById('file-list');
             tbody.innerHTML = '';
-
             updateBreadcrumbs();
 
             if (path !== "/") {
                 const parent = path.substring(0, path.lastIndexOf('/')) || "/";
-                addFileRow({name: "..", isDir: true, size: 0}, true, parent);
+                addFileRow({ name: "..", isDir: true, size: 0 }, true, parent);
             }
 
-            data.files.forEach(file => addFileRow(file));
+            const sorted = [...(data.files || [])].sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name));
+            if (!sorted.length && path === "/") {
+                const tr = document.createElement('tr');
+                tr.className = 'empty-row';
+                const td = document.createElement('td');
+                td.colSpan = 3;
+                td.textContent = T('المجلد فارغ');
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+            if (!sorted.length) {
+                const tr = document.createElement('tr');
+                tr.className = 'empty-row';
+                const td = document.createElement('td');
+                td.colSpan = 3;
+                td.textContent = T('المجلد فارغ');
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            }
+            sorted.forEach(file => addFileRow(file));
         }
 
         function addFileRow(file, isBack = false, backPath = "") {
             const tbody = document.getElementById('file-list');
             const row = document.createElement('tr');
             row.className = "file-row";
-            const icon = file.isDir ? svgDir : svgFile;
             const fullPath = isBack ? backPath : (currentPath === "/" ? "" : currentPath) + "/" + file.name;
 
-            row.innerHTML = `
-                <td>
-                    <div class="file-item" onclick="${file.isDir ? `loadFiles('${fullPath}')` : `editFile('${fullPath}')`}">
-                        ${icon} <span>${file.name}</span>
-                    </div>
-                </td>
-                <td style="text-align:center; color:#64748b; font-size:11px; font-family:monospace;">${file.isDir ? '--' : (file.size/1024).toFixed(1) + ' KB'}</td>
-                <td>
-                    <div class="actions ${isBack ? 'hidden' : ''}">
-                        <a href="/api/download?path=${encodeURIComponent(fullPath)}" style="color:var(--success)">${svgDL}</a>
-                        <button class="btn btn-ghost" onclick="renameItem('${fullPath}')" style="color:var(--warning)">${svgEdit}</button>
-                        <button class="btn btn-ghost" onclick="deleteItem('${fullPath}')" style="color:var(--danger)">${svgDel}</button>
-                    </div>
-                </td>
-            `;
+            const tdName = document.createElement('td');
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = isBack ? svgUp : (file.isDir ? svgDir : svgFile);
+            const span = document.createElement('span');
+            span.className = 'file-name';
+            span.textContent = file.name;
+            item.appendChild(span);
+            item.onclick = () => file.isDir ? loadFiles(fullPath) : editFile(fullPath);
+            tdName.appendChild(item);
+
+            const tdSize = document.createElement('td');
+            tdSize.style.cssText = 'text-align:center;color:var(--muted);font-size:12px;font-family:monospace;';
+            tdSize.textContent = file.isDir ? '--' : (file.size / 1024).toFixed(1) + ' KB';
+
+            const tdActs = document.createElement('td');
+            const acts = document.createElement('div');
+            acts.className = 'actions' + (isBack ? ' hidden' : '');
+
+            const dl = document.createElement('a');
+            dl.href = `/api/download?path=${encodeURIComponent(fullPath)}`;
+            dl.className = 'btn btn-ghost icon-btn';
+            dl.style.color = 'var(--success)';
+            dl.title = T('تنزيل');
+            dl.innerHTML = svgDL;
+
+            const ren = document.createElement('button');
+            ren.type = 'button';
+            ren.className = 'btn btn-ghost icon-btn';
+            ren.style.color = 'var(--warning)';
+            ren.title = T('إعادة تسمية');
+            ren.innerHTML = svgEdit;
+            ren.onclick = () => renameItem(fullPath);
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'btn btn-ghost icon-btn';
+            del.style.color = 'var(--danger)';
+            del.title = T('حذف');
+            del.innerHTML = svgDel;
+            del.onclick = () => deleteItem(fullPath);
+
+            acts.append(dl, ren, del);
+            tdActs.appendChild(acts);
+            row.append(tdName, tdSize, tdActs);
             tbody.appendChild(row);
         }
 
         function updateBreadcrumbs() {
-            const parts = currentPath.split('/').filter(p => p);
-            let html = `<span style="cursor:pointer;" onclick="loadFiles('/')">${T('الرئيسية')}</span>`;
-            let acc = "";
-            parts.forEach(p => { acc += "/" + p; html += ` <span style="color:#334155; margin:0 5px;">/</span> <span style="cursor:pointer;" onclick="loadFiles('${acc}')">${p}</span>`; });
-            document.getElementById('breadcrumbs').innerHTML = html;
+            const bar = document.getElementById('breadcrumbs');
+            bar.innerHTML = '';
+            const parts = currentPath.split('/').filter(Boolean);
+
+            const home = document.createElement('span');
+            home.className = 'crumb' + (parts.length === 0 ? ' curr' : '');
+            home.innerHTML = svgHome + ' ';
+            const homeTxt = document.createElement('span');
+            homeTxt.textContent = T('الرئيسية');
+            home.appendChild(homeTxt);
+            home.onclick = () => loadFiles('/');
+            bar.appendChild(home);
+
+            let acc = '';
+            parts.forEach((p, idx) => {
+                acc += '/' + p;
+                const target = acc;
+                const sep = document.createElement('span');
+                sep.style.color = 'var(--muted)';
+                sep.textContent = '/';
+                const seg = document.createElement('span');
+                seg.className = 'crumb' + (idx === parts.length - 1 ? ' curr' : '');
+                seg.textContent = p;
+                seg.onclick = () => loadFiles(target);
+                bar.append(sep, seg);
+            });
         }
 
         async function uploadFile() {
-            const file = document.getElementById('u-input').files[0];
+            const inp = document.getElementById('u-input');
+            const file = inp.files[0];
             if (!file) return;
             const formData = new FormData();
-            formData.append("file", file, (currentPath==="/"?"":currentPath)+"/"+file.name);
-            await fetch('/api/upload', { method: 'POST', body: formData });
+            formData.append("file", file, (currentPath === "/" ? "" : currentPath) + "/" + file.name);
+            const r = await fetch('/api/upload', { method: 'POST', body: formData });
+            inp.value = '';
+            if (r.ok) notify(T('تم الرفع'));
             loadFiles(currentPath);
         }
 
         async function createNewFile() {
-            const n = prompt(T("اسم الملف:"));
-            if (n) {
-                const path = (currentPath==="/"?"":currentPath)+"/"+n;
-                openEditor(path, "");
-            }
+            const n = await askDialog({ title: T('ملف'), message: T('اسم الملف:'), inputVal: '' });
+            if (n) openEditor((currentPath === "/" ? "" : currentPath) + "/" + n, "");
         }
 
         async function createNewDir() {
-            const n = prompt(T("اسم المجلد:"));
+            const n = await askDialog({ title: T('مجلد'), message: T('اسم المجلد:'), inputVal: '' });
             if (n) {
-                const path = (currentPath==="/"?"":currentPath)+"/"+n;
+                const path = (currentPath === "/" ? "" : currentPath) + "/" + n;
                 await request(`/api/mkdir?path=${encodeURIComponent(path)}`, 'POST');
                 loadFiles(currentPath);
             }
@@ -284,64 +595,281 @@
             const formData = new FormData();
             formData.append('content', ta().value);
             const r = await request(`/api/save?path=${encodeURIComponent(document.getElementById('editor-title').innerText)}`, 'POST', formData);
-            if (!r || !r.ok) { alert(T("فشل الحفظ")); return; }         // فشل: ابقَ في المحرر كي لا تضيع التعديلات
-            setDirty(false); closeEditor(true); loadFiles(currentPath);
+            if (!r || !r.ok) { notify(T('فشل الحفظ'), true); return; }
+            setDirty(false);
+            closeEditor(true);
+            notify(T('تم الحفظ'));
+            loadFiles(currentPath);
         }
 
         async function deleteItem(path) {
-            if (confirm(T("حذف نهائي؟"))) { await request(`/api/delete?path=${encodeURIComponent(path)}`, 'DELETE'); loadFiles(currentPath); }
+            const ok = await askDialog({ title: T('حذف نهائي؟'), message: path, danger: true });
+            if (ok) {
+                await request(`/api/delete?path=${encodeURIComponent(path)}`, 'DELETE');
+                notify(T('تم الحذف'));
+                loadFiles(currentPath);
+            }
         }
 
         async function renameItem(path) {
-            const n = prompt(T("الاسم/المسار الجديد:"), path);
-            if (n) { await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`, 'POST'); loadFiles(currentPath); }
+            const n = await askDialog({ title: T('إعادة تسمية'), message: T('الاسم/المسار الجديد:'), inputVal: path });
+            if (n && n !== path) {
+                await request(`/api/rename?old=${encodeURIComponent(path)}&new=${encodeURIComponent(n)}`, 'POST');
+                notify(T('تمت إعادة التسمية'));
+                loadFiles(currentPath);
+            }
         }
 
         async function formatFS() {
-            if (confirm(T("تحذير: سيتم مسح الذاكرة بالكامل!"))) { await request('/api/format', 'POST'); location.reload(); }
+            const ok = await askDialog({ title: T('تهيئة'), message: T('تحذير: سيتم مسح الذاكرة بالكامل!'), danger: true });
+            if (ok) { await request('/api/format', 'POST'); location.reload(); }
         }
 
-        // تحديث الواجهة (littlefs.bin) عبر OTA بمفتاح الطوارئ
-        function otaFs() {
+        async function otaFs() {
             const inp = document.getElementById('ota-input');
             const f = inp.files[0];
             if (!f) return;
-            if (!confirm(T("تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟"))) { inp.value = ''; return; }
+            const ok = await askDialog({
+                title: T('تحديث الواجهة'),
+                message: T('تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟'),
+                danger: true
+            });
+            if (!ok) { inp.value = ''; return; }
             const st = document.getElementById('storage-txt');
             const x = new XMLHttpRequest();
             x.open('POST', '/api/ota?type=fs');
             x.upload.onprogress = e => { if (e.lengthComputable) st.innerText = 'OTA: ' + Math.round(e.loaded / e.total * 100) + '%'; };
             x.onload = () => {
                 if (x.status === 200) { st.innerText = T('تم التحديث، يُعاد تشغيل الجهاز...'); setTimeout(() => location.reload(), 12000); }
-                else { alert(T('فشل التحديث: ') + x.responseText); inp.value = ''; loadFiles(currentPath); }
+                else {
+                    let err = x.responseText || ('HTTP ' + x.status);
+                    try { err = JSON.parse(x.responseText).error || err; } catch {}
+                    notify(T('فشل التحديث: ') + err, true); inp.value = ''; loadFiles(currentPath);
+                }
             };
-            x.onerror = () => { alert(T('انقطع الاتصال')); inp.value = ''; };
+            x.onerror = () => { notify(T('انقطع الاتصال'), true); inp.value = ''; };
             const fd = new FormData(); fd.append('file', f, f.name); x.send(fd);
         }
 
-        function logout() { document.cookie = "session_key=; Max-Age=0; path=/;"; location.href = "/"; }
-        // ---- محرر الكود ----
+        async function logout() { try { await fetch('/em/logout', { method: 'POST' }); } catch {} location.href = "/"; }
+
+        // ---- محرر الكود + تلوين الصيغة ----
         const ta = () => document.getElementById('editor-content');
-        let edDirty = false, edFontSize = +(localStorage.getItem('em-font') || 14), edSaved = '';
-        function setDirty(d) { edDirty = d; document.getElementById('ed-dirty').style.display = d ? 'inline' : 'none'; }
+        const hl = () => document.getElementById('ed-hl');
+        let edDirty = false, edFontSize = +(localStorage.getItem('em-font') || 14), edSaved = '', edLang = 'plain';
+
+        const escHtml = s => s.replace(/[&<>]/g, c => c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;');
+        const sp = (c, s) => `<span class="tk-${c}">${escHtml(s)}</span>`;
+        const detectLang = p => {
+            const ext = (p.split('.').pop() || '').toLowerCase();
+            if (ext === 'html' || ext === 'htm' || ext === 'svg' || ext === 'xml') return 'html';
+            if (ext === 'js' || ext === 'mjs' || ext === 'cjs' || ext === 'ts') return 'js';
+            if (ext === 'json') return 'json';
+            if (ext === 'lua') return 'lua';
+            if (ext === 'py') return 'python';
+            if (ext === 'css' || ext === 'scss') return 'css';
+            if (ext === 'c' || ext === 'h') return 'c';
+            if (ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'hpp' || ext === 'hh' || ext === 'ino') return 'cpp';
+            return 'plain';
+        };
+
+        const KW = {
+            lua: new Set('and,break,do,else,elseif,end,for,function,goto,if,in,local,not,or,repeat,return,then,until,while'.split(',')),
+            luaLit: new Set(['true', 'false', 'nil']),
+            luaBi: new Set('print,pairs,ipairs,next,type,tonumber,tostring,error,pcall,xpcall,require,select,unpack,rawget,rawset,setmetatable,getmetatable,math,string,table,coroutine,utf8,os,io,gpio,adc,pwm,timer,sys,ui,drv,bus,storage'.split(',')),
+            py: new Set('and,as,assert,async,await,break,class,continue,def,del,elif,else,except,finally,for,from,global,if,import,in,is,lambda,nonlocal,not,or,pass,raise,return,try,while,with,yield,match,case'.split(',')),
+            pyLit: new Set(['True', 'False', 'None']),
+            pyBi: new Set('abs,all,any,bin,bool,bytes,bytearray,callable,chr,dict,dir,divmod,enumerate,eval,exec,filter,float,format,frozenset,getattr,globals,hasattr,hash,hex,id,input,int,isinstance,issubclass,iter,len,list,locals,map,max,min,next,object,oct,open,ord,pow,print,property,range,repr,reversed,round,set,setattr,slice,sorted,staticmethod,str,sum,super,tuple,type,vars,zip,self,cls'.split(',')),
+            js: new Set('async,await,break,case,catch,class,const,continue,debugger,default,delete,do,else,export,extends,finally,for,from,function,if,import,in,instanceof,let,new,of,return,static,super,switch,this,throw,try,typeof,var,void,while,with,yield,as,type,interface,enum,implements'.split(',')),
+            jsLit: new Set(['true', 'false', 'null', 'undefined', 'NaN', 'Infinity']),
+            jsBi: new Set('Array,Boolean,Date,Error,Function,JSON,Map,Math,Number,Object,Promise,RegExp,Set,String,Symbol,console,document,window,fetch,localStorage,URL,FormData,XMLHttpRequest'.split(',')),
+            c: new Set('auto,break,case,const,continue,default,do,else,enum,extern,for,goto,if,inline,register,restrict,return,sizeof,static,struct,switch,typedef,union,volatile,while,_Alignas,_Alignof,_Atomic,_Bool,_Complex,_Generic,_Imaginary,_Noreturn,_Static_assert,_Thread_local'.split(',')),
+            cpp: new Set('alignas,alignof,and,asm,auto,bitand,bitor,break,case,catch,class,compl,concept,const,consteval,constexpr,constinit,const_cast,continue,co_await,co_return,co_yield,decltype,default,delete,do,dynamic_cast,else,enum,explicit,export,extern,final,for,friend,goto,if,inline,mutable,namespace,new,noexcept,not,operator,or,override,private,protected,public,register,reinterpret_cast,requires,return,sizeof,static,static_assert,static_cast,struct,switch,template,this,thread_local,throw,try,typedef,typeid,typename,union,using,virtual,volatile,while,xor'.split(',')),
+            cLit: new Set(['true', 'false', 'nullptr', 'NULL']),
+            cBi: new Set('void,char,short,int,long,float,double,signed,unsigned,bool,size_t,ssize_t,ptrdiff_t,int8_t,int16_t,int32_t,int64_t,uint8_t,uint16_t,uint32_t,uint64_t,uintptr_t,intptr_t,FILE,String,JsonDocument,JsonArray,JsonObject,File,SemaphoreHandle_t,std,vector,string'.split(','))
+        };
+
+        function tokScan(code, rules) {
+            let out = '', i = 0, n = code.length;
+            while (i < n) {
+                let matched = false;
+                for (let r = 0; r < rules.length; r++) {
+                    const re = rules[r][0];
+                    re.lastIndex = i;
+                    const m = re.exec(code);
+                    if (m) {
+                        const cls = typeof rules[r][1] === 'function' ? rules[r][1](m[0], code, i + m[0].length) : rules[r][1];
+                        out += cls ? sp(cls, m[0]) : escHtml(m[0]);
+                        i += m[0].length;
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) { out += escHtml(code[i]); i++; }
+            }
+            return out;
+        }
+
+        function hlCode(code, lang) {
+            if (!code || lang === 'plain' || code.length > 120000) return escHtml(code);
+            const afterCall = (code, end) => /^\s*\(/.test(code.slice(end, end + 16));
+            const numRe = /(?:0[xXbBoO][0-9a-fA-F_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?)[uUlLfFnNjJ]*/y;
+            const idRe = /[A-Za-z_]\w*/y;
+            const wsRe = /\s+/y;
+
+            if (lang === 'json') {
+                return tokScan(code, [
+                    [wsRe, null],
+                    [/"(?:\\.|[^"\\\n])*"(?=\s*:)/y, 'p'],
+                    [/"(?:\\.|[^"\\\n])*"/y, 's'],
+                    [/-?(?:\d+\.\d+|\d+)(?:[eE][+-]?\d+)?/y, 'n'],
+                    [/\b(?:true|false|null)\b/y, 'n']
+                ]);
+            }
+            if (lang === 'lua') {
+                return tokScan(code, [
+                    [wsRe, null],
+                    [/--\[(=*)\[[\s\S]*?(?:\]\1\]|$)/y, 'c'],
+                    [/--[^\n]*/y, 'c'],
+                    [/\[(=*)\[[\s\S]*?(?:\]\1\]|$)/y, 's'],
+                    [/"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/y, 's'],
+                    [numRe, 'n'],
+                    [idRe, (w, src, end) => KW.lua.has(w) ? 'k' : KW.luaLit.has(w) ? 'n' : KW.luaBi.has(w) ? 't' : afterCall(src, end) ? 'f' : null]
+                ]);
+            }
+            if (lang === 'python') {
+                return tokScan(code, [
+                    [wsRe, null],
+                    [/#[^\n]*/y, 'c'],
+                    [/[frubFRUB]{0,2}(?:"""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$))/y, 's'],
+                    [/[frubFRUB]{0,2}(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')/y, 's'],
+                    [/@[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/y, 'p'],
+                    [numRe, 'n'],
+                    [idRe, (w, src, end) => KW.py.has(w) ? 'k' : KW.pyLit.has(w) ? 'n' : KW.pyBi.has(w) ? 't' : afterCall(src, end) ? 'f' : null]
+                ]);
+            }
+            if (lang === 'js') {
+                return tokScan(code, [
+                    [wsRe, null],
+                    [/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*/y, 'c'],
+                    [/`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/y, 's'],
+                    [numRe, 'n'],
+                    [idRe, (w, src, end) => KW.js.has(w) ? 'k' : KW.jsLit.has(w) ? 'n' : KW.jsBi.has(w) ? 't' : afterCall(src, end) ? 'f' : null]
+                ]);
+            }
+            if (lang === 'c' || lang === 'cpp') {
+                const kws = lang === 'cpp' ? KW.cpp : KW.c;
+                return tokScan(code, [
+                    [wsRe, null],
+                    [/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*/y, 'c'],
+                    [/^[ \t]*#[^\n]*/my, 'p'],
+                    [/[LuU]?"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/y, 's'],
+                    [numRe, 'n'],
+                    [idRe, (w, src, end) => kws.has(w) ? 'k' : KW.cLit.has(w) ? 'n' : KW.cBi.has(w) ? 't' : afterCall(src, end) ? 'f' : null]
+                ]);
+            }
+            if (lang === 'css') {
+                let depth = 0, out = '', i = 0, n = code.length;
+                const cRe = /\/\*[\s\S]*?(?:\*\/|$)/y, sRe = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/y;
+                const atRe = /@[A-Za-z_-][\w-]*/y, colRe = /#[0-9a-fA-F]{3,8}\b/y;
+                const cssNumRe = /-?(?:\d+\.\d+|\d+|\.\d+)(?:[a-zA-Z%]+)?/y;
+                const propRe = /[A-Za-z_-][\w-]*(?=\s*:)/y, selRe = /[.#:]?[A-Za-z_-][\w-]*/y;
+                while (i < n) {
+                    const ch = code[i];
+                    if (ch === '{') { depth++; out += '{'; i++; continue; }
+                    if (ch === '}') { depth = Math.max(0, depth - 1); out += '}'; i++; continue; }
+                    cRe.lastIndex = sRe.lastIndex = atRe.lastIndex = colRe.lastIndex = cssNumRe.lastIndex = propRe.lastIndex = selRe.lastIndex = i;
+                    let m;
+                    if ((m = cRe.exec(code))) out += sp('c', m[0]);
+                    else if ((m = sRe.exec(code))) out += sp('s', m[0]);
+                    else if ((m = atRe.exec(code))) out += sp('p', m[0]);
+                    else if ((m = colRe.exec(code))) out += sp('n', m[0]);
+                    else if ((m = cssNumRe.exec(code))) out += sp('n', m[0]);
+                    else if (depth > 0 && (m = propRe.exec(code))) out += sp('f', m[0]);
+                    else if ((m = selRe.exec(code))) out += depth === 0 ? sp('t', m[0]) : (m[0] === 'important' ? sp('k', m[0]) : escHtml(m[0]));
+                    else { out += escHtml(ch); i++; continue; }
+                    i += m[0].length;
+                }
+                return out;
+            }
+            if (lang === 'html') {
+                const hlTagAttrs = s => tokScan(s, [
+                    [wsRe, null],
+                    [/"[^"]*"|'[^']*'/y, 's'],
+                    [/[A-Za-z_:][\w:.-]*(?=\s*=)/y, 'f'],
+                    [/[A-Za-z_:][\w:.-]*/y, 'f']
+                ]);
+                let out = '', i = 0, n = code.length;
+                const cmRe = /<!--[\s\S]*?(?:-->|$)/y, dtRe = /<![A-Za-z][^>]*>/y, entRe = /&[A-Za-z0-9#]+;/y;
+                const tagRe = /<(\/?)([A-Za-z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(\/?)>/y;
+                while (i < n) {
+                    cmRe.lastIndex = dtRe.lastIndex = entRe.lastIndex = tagRe.lastIndex = i;
+                    let m;
+                    if ((m = cmRe.exec(code))) { out += sp('c', m[0]); i += m[0].length; }
+                    else if ((m = dtRe.exec(code))) { out += sp('p', m[0]); i += m[0].length; }
+                    else if ((m = tagRe.exec(code))) {
+                        out += escHtml('<' + m[1]) + sp('t', m[2]) + hlTagAttrs(m[3]) + escHtml(m[4] + '>');
+                        i += m[0].length;
+                        const tag = m[2].toLowerCase();
+                        if (!m[1] && !m[4] && (tag === 'script' || tag === 'style')) {
+                            const closeRe = new RegExp(`</${tag}\\s*>`, 'i');
+                            const sub = code.slice(i), cm = closeRe.exec(sub);
+                            const endIdx = cm ? cm.index : sub.length;
+                            out += hlCode(sub.slice(0, endIdx), tag === 'script' ? 'js' : 'css');
+                            i += endIdx;
+                        }
+                    } else if ((m = entRe.exec(code))) { out += sp('n', m[0]); i += m[0].length; }
+                    else { out += escHtml(code[i]); i++; }
+                }
+                return out;
+            }
+            return escHtml(code);
+        }
+
+        function setDirty(d) { edDirty = d; document.getElementById('ed-dirty').style.display = d ? 'inline-block' : 'none'; }
+        function edSyncScroll() {
+            const t = ta(), g = document.getElementById('ed-gutter'), h = hl();
+            g.scrollTop = t.scrollTop;
+            h.scrollTop = t.scrollTop;
+            h.scrollLeft = t.scrollLeft;
+        }
         function edGutter() {
             const n = ta().value.split('\n').length, g = document.getElementById('ed-gutter');
             if (g.dataset.n != n) { g.dataset.n = n; g.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n'); }
-            g.scrollTop = ta().scrollTop;
+            edSyncScroll();
         }
+        function edRender() {
+            const v = ta().value;
+            let html = hlCode(v, edLang);
+            if (v.endsWith('\n')) html += ' ';
+            hl().innerHTML = html;
+            edSyncScroll();
+        }
+        function edSetLang(l) { edLang = l; edRender(); }
         function edStatus() {
             const t = ta(), pre = t.value.slice(0, t.selectionStart).split('\n');
             document.getElementById('ed-pos').textContent = pre.length + ':' + (pre[pre.length - 1].length + 1);
             document.getElementById('ed-info').textContent = t.value.split('\n').length + ' ' + T('سطر') + ' · ' + t.value.length + ' B';
         }
         function edFont(d) { edFontSize = Math.max(10, Math.min(24, edFontSize + d)); localStorage.setItem('em-font', edFontSize); applyFont(); }
-        function applyFont() { ta().style.fontSize = edFontSize + 'px'; document.getElementById('ed-gutter').style.fontSize = edFontSize + 'px'; }
-        function edWrap() { ta().classList.toggle('wrap'); ta().setAttribute('wrap', ta().classList.contains('wrap') ? 'soft' : 'off'); }
+        function applyFont() {
+            const sz = edFontSize + 'px';
+            ta().style.fontSize = sz;
+            hl().style.fontSize = sz;
+            document.getElementById('ed-gutter').style.fontSize = sz;
+        }
+        function edWrap() {
+            const on = ta().classList.toggle('wrap');
+            hl().classList.toggle('wrap', on);
+            ta().setAttribute('wrap', on ? 'soft' : 'off');
+            document.getElementById('ed-wrap').classList.toggle('btn-active', on);
+            edSyncScroll();
+        }
         function edFind(back) {
             const q = document.getElementById('ed-find').value, t = ta(); if (!q) return;
             const v = t.value.toLowerCase(), k = q.toLowerCase();
             let i = back ? v.lastIndexOf(k, t.selectionStart - 1) : v.indexOf(k, t.selectionEnd);
-            if (i < 0) i = back ? v.lastIndexOf(k) : v.indexOf(k);          // التفاف حول الملف
+            if (i < 0) i = back ? v.lastIndexOf(k) : v.indexOf(k);
             if (i < 0) return;
             t.focus(); t.setSelectionRange(i, i + k.length);
             const line = v.slice(0, i).split('\n').length - 1; t.scrollTop = Math.max(0, line * edFontSize * 1.5 - t.clientHeight / 2);
@@ -350,22 +878,29 @@
         function openEditor(path, text) {
             document.getElementById('editor-title').innerText = path;
             const t = ta(); t.value = text; edSaved = text; setDirty(false);
-            t.classList.remove('wrap'); t.setAttribute('wrap', 'off'); applyFont();
+            edLang = detectLang(path);
+            document.getElementById('ed-lang').value = edLang;
+            t.classList.remove('wrap'); hl().classList.remove('wrap'); t.setAttribute('wrap', 'off');
+            document.getElementById('ed-wrap').classList.remove('btn-active');
+            applyFont();
             document.getElementById('editor-modal').style.display = 'flex';
-            edGutter(); edStatus(); t.scrollTop = 0; t.focus();
+            edRender(); edGutter(); edStatus(); t.scrollTop = 0; t.scrollLeft = 0; edSyncScroll(); t.focus();
         }
-        function closeEditor(force) {
-            if (force !== true && edDirty && !confirm(T('تعديلات غير محفوظة. إغلاق بدون حفظ؟'))) return;
+        async function closeEditor(force) {
+            if (force !== true && edDirty) {
+                const ok = await askDialog({ title: T('إغلاق'), message: T('تعديلات غير محفوظة. إغلاق بدون حفظ؟'), danger: true });
+                if (!ok) return;
+            }
             document.getElementById('editor-modal').style.display = 'none';
         }
         document.addEventListener('DOMContentLoaded', () => {
             const t = ta();
-            t.addEventListener('input', () => { setDirty(t.value !== edSaved); edGutter(); edStatus(); });
-            t.addEventListener('scroll', edGutter);
+            t.addEventListener('input', () => { setDirty(t.value !== edSaved); edRender(); edGutter(); edStatus(); });
+            t.addEventListener('scroll', edSyncScroll);
             ['keyup', 'click'].forEach(e => t.addEventListener(e, edStatus));
             t.addEventListener('keydown', e => {
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
-                else if (e.key === 'Tab') {                          // Tab = مسافتان بدل الخروج من الحقل
+                else if (e.key === 'Tab') {
                     e.preventDefault(); const s = t.selectionStart;
                     t.setRangeText('  ', s, t.selectionEnd, 'end'); t.dispatchEvent(new Event('input'));
                 } else if (e.key === 'Escape') closeEditor();

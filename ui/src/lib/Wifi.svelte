@@ -2,6 +2,8 @@
   import { api } from '../api.js';
   import { t } from '../store.svelte.js';
   import PassInput from './PassInput.svelte';
+  import Icon from './Icon.svelte';
+  import SignalBars from './SignalBars.svelte';
 
   let f = $state({ mode: 'AP', ap_ssid: '', ap_pass: '', nets: [] });
   const MAX_NETS = 6;
@@ -42,7 +44,7 @@
 </script>
 
 <form class="glass" onsubmit={save}>
-  <h2>📶 {t('إعدادات الواي فاي')}</h2>
+  <h2><Icon name="wifi" size={17} /> {t('إعدادات الواي فاي')}</h2>
   <label for="m">{t('الوضع')}</label>
   <select id="m" bind:value={f.mode}>
     <option value="AP">{t('AP (نقطة وصول)')}</option>
@@ -53,22 +55,23 @@
   {#if f.mode !== 'AP'}
     <label>{t('الشبكات المحفوظة (تُجرَّب بالترتيب والأقوى أولاً؛ إن فشلت كلها يدخل وضع الاسترداد)')}</label>
     {#each f.nets as n, i}
-      <div class="net" style="display:block">
-        <div class="row" style="gap:6px">
+      <div class="net" style="display:block;cursor:default">
+        <div class="row" style="gap:6px;flex-wrap:nowrap">
           <input style="flex:1;min-width:0" placeholder={t('اسم الشبكة')} bind:value={n.ssid} maxlength="32" />
-          <button type="button" class="btn ghost" title={t('أعلى')} onclick={() => upNet(i)} disabled={i === 0}>⬆</button>
-          <button type="button" class="btn ghost" title={t('حذف')} onclick={() => rmNet(i)}>🗑</button>
+          <button type="button" class="btn ghost icon-btn" title={t('أعلى')} onclick={() => upNet(i)} disabled={i === 0}><Icon name="arrow-up" size={15} /></button>
+          <button type="button" class="btn ghost icon-btn" title={t('حذف')} onclick={() => rmNet(i)}><Icon name="trash" size={15} /></button>
         </div>
         <div style="margin-top:6px"><PassInput bind:value={n.pass} placeholder={t('كلمة المرور')} /></div>
       </div>
     {/each}
-    <div class="row" style="gap:6px;margin-top:6px">
-      <button type="button" class="btn ghost" onclick={() => addNet()} disabled={f.nets.length >= MAX_NETS}>＋ {t('إضافة شبكة')}</button>
-      <button type="button" class="btn ghost" onclick={scan} disabled={scanning}>{scanning ? '...' : t('مسح')}</button>
+    <div class="row" style="gap:6px;margin-top:8px">
+      <button type="button" class="btn ghost sm" onclick={() => addNet()} disabled={f.nets.length >= MAX_NETS}><Icon name="plus" size={14} /> {t('إضافة شبكة')}</button>
+      <button type="button" class="btn ghost sm" onclick={scan} disabled={scanning}><Icon name="search" size={14} /> {scanning ? '...' : t('مسح')}</button>
     </div>
     {#each found as n}
       <div class="net" role="button" tabindex="0" onclick={() => addNet(n.ssid)} onkeydown={(e) => e.key === 'Enter' && addNet(n.ssid)}>
-        <span>{n.ssid} {n.secure ? '🔒' : ''}</span><span style="color:var(--muted)">{n.rssi} dBm</span>
+        <span class="row" style="gap:6px">{n.ssid} {#if n.secure}<Icon name="lock" size={13} />{/if}</span>
+        <span class="row" style="gap:8px;flex-wrap:nowrap;direction:ltr"><SignalBars rssi={n.rssi} /><span style="color:var(--muted)">{n.rssi} dBm</span></span>
       </div>
     {/each}
   {/if}

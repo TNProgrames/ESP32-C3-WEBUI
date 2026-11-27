@@ -1,6 +1,7 @@
 <script>
   import { api } from '../api.js';
   import { t } from '../store.svelte.js';
+  import Icon from './Icon.svelte';
 
   const MAX = 20000;
   let out = $state(t('اكتب help لعرض الأوامر') + '\n');
@@ -52,7 +53,7 @@
 
 <div class="glass">
   <div class="row" style="justify-content:space-between;margin-bottom:12px">
-    <h2 style="margin:0">💻 {t('الطرفية')}</h2>
+    <h2 style="margin:0"><Icon name="terminal" size={17} /> {t('الطرفية')}</h2>
     <div class="row">
       <span style="font-size:12px;color:var(--muted)">{t('عرض سجل الجهاز (Serial)')}</span>
       <label class="switch"><input type="checkbox" bind:checked={live} /><span class="slider"></span></label>
@@ -64,6 +65,6 @@
   <form class="row" style="margin-top:10px;flex-wrap:nowrap" onsubmit={send}>
     <input class="term-input" style="flex:1" bind:value={cmd} onkeydown={keys} placeholder={t('أمر...')} autocomplete="off" autocapitalize="off" spellcheck="false" />
     <button class="btn">{t('إرسال')}</button>
-    <button type="button" class="btn ghost" onclick={() => (out = '')}>🧹</button>
+    <button type="button" class="btn ghost icon-btn" title={t('تنظيف')} aria-label={t('تنظيف')} onclick={() => (out = '')}><Icon name="eraser" size={16} /></button>
   </form>
 </div>

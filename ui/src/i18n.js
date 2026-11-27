@@ -8,7 +8,7 @@ export const en = {
   'درايفرات': 'Drivers',
   'تم الحفظ — يُعاد تشغيل الجهاز لتطبيق الاسم المحلي...': 'Saved — the device is restarting to apply the local name...',
   'يبقى لأن تطبيقًا آخر يستعمله': 'Kept because another app uses it',
-  'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'تطبيق': 'apps', 'صفحة': 'page', 'لا توجد تطبيقات (اضغط 🔄)': 'No apps (press 🔄)',
+  'بحث عن تطبيق أو درايفر': 'Search apps or drivers', 'الكل': 'All', 'حساسات': 'Sensors', 'شاشات': 'Displays', 'وقت': 'Time', 'أدوات': 'Tools', 'لا نتائج': 'No results', 'تطبيق': 'apps', 'صفحة': 'page',
   'مثبّت': 'Installed', 'صفحة + canvas': 'Page + canvas', 'درايفر': 'driver', 'حذف التطبيق': 'Delete app', 'تم الحذف': 'Deleted', 'تعذر الحذف': 'Could not delete', 'الدرايفرات': 'Drivers', 'الإعدادات': 'Settings',
 
   'الاسم المحلي: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، دون شرطة في الأول أو الآخر': 'Local name: lowercase letters, digits and hyphen only, no leading/trailing hyphen',
@@ -78,12 +78,21 @@ export const en = {
   'المضيف المحلي': 'Local host', 'مضيف الإنترنت': 'Internet host',
   'رقم PIN لإعادة الضبط': 'Reset PIN (GPIO number)', 'حفظ': 'Save', 'تم الحفظ': 'Saved',
   // Passwords
-  'كلمة مرور admin': 'Admin password', 'كلمة مرور user': 'User password', 'الحقلان مطلوبان': 'Both fields are required',
+  'كلمة مرور admin': 'Admin password', 'كلمة مرور user': 'User password',
+  'كلمة مرور صفحة الطوارئ (/em)': 'Emergency page password (/em)',
+  '4 أحرف على الأقل (اتركها فارغة للإبقاء)': 'Min 4 chars (leave blank to keep)',
+  'كلمة مرور الطوارئ بين 4 و 31 حرفًا': 'Emergency password must be 4–31 characters',
+  'أدخل كلمة مرور واحدة على الأقل': 'Enter at least one password',
+  'كلمة مرور جديدة (اتركها فارغة للإبقاء)': 'New password (leave blank to keep)',
+  'تُخزَّن كلمات المرور معمّاة ولا يمكن استرجاعها؛ اترك الحقل فارغًا للإبقاء على كلمة المرور الحالية.':
+    'Passwords are stored hashed and cannot be viewed; leave a field blank to keep the current password.',
   // Backup
   'نسخة احتياطية': 'Backup',
-  'تحفظ الإعدادات (الواي فاي، الاتصال، PIN) وكلمات المرور في ملف JSON واحد.': 'Saves the settings (WiFi, connection, PIN) and passwords in one JSON file.',
+  'تحفظ الإعدادات (الواي فاي والشبكات المحفوظة، الاتصال، PIN) وبيانات التحقق في ملف JSON واحد.':
+    'Saves settings (WiFi, saved networks, connection, PIN) and hashed credentials in one JSON file.',
   'تنزيل النسخة الاحتياطية': 'Download backup',
-  'تنبيه: الملف يحتوي كلمات المرور كنص صريح، فاحفظه في مكان آمن.': 'Note: the file contains passwords in plain text, keep it safe.',
+  'تنبيه: الملف يحتوي إعدادات الشبكات وبيانات التحقق المعمّاة، فاحفظه في مكان آمن.':
+    'Note: the file contains network settings and hashed credentials, keep it in a safe place.',
   'استعادة': 'Restore', 'ملف النسخة الاحتياطية (.json)': 'Backup file (.json)',
   'استعادة وإعادة التشغيل': 'Restore & restart',
   'تم تنزيل النسخة الاحتياطية': 'Backup downloaded', 'فشل التنزيل: ': 'Download failed: ',

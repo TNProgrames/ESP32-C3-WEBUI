@@ -4,6 +4,7 @@
   import { examples } from '../examples.js';
   import { lab, persistLab } from '../lab.svelte.js';
   import CodeEditor from './CodeEditor.svelte';
+  import Icon from './Icon.svelte';
 
   let { go = () => {} } = $props();
 
@@ -132,14 +133,14 @@
 </script>
 
 <div class="glass" id="lab-editor">
-  <h2 style="margin-top:0">🧪 {t('مختبر Lua')}</h2>
+  <h2 style="margin-top:0"><Icon name="flask" size={17} /> {t('مختبر Lua')}</h2>
   <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
     {t('اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, ui, print.')}
   </p>
 
   <div class="row" style="margin-bottom:8px">
     <input style="flex:1;min-width:90px" bind:value={lab.name} placeholder={t('اسم السكريبت')} autocapitalize="off" spellcheck="false" />
-    <select onchange={load}>
+    <select style="width:auto;min-width:160px" onchange={load}>
       <option value="">{t('أمثلة...')}</option>
       {#each Object.keys(examples) as k}<option value={k}>{k}</option>{/each}
     </select>
@@ -160,33 +161,36 @@
   </label>
 
   <div class="row" style="margin:10px 0">
-    <button class="btn" onclick={run} disabled={busy}>{lab.asLib ? '📦 ' + t('حفظ المكتبة') : '▶ ' + t('حفظ وتشغيل')}</button>
-    <button class="btn ghost" onclick={() => stop('all')}>⏹ {t('إيقاف الكل')}</button>
-    <button class="btn ghost" onclick={() => go('panels')}>🪟 {t('اللوحات')}</button>
+    <button class="btn" onclick={run} disabled={busy}>
+      <Icon name={lab.asLib ? 'box' : 'play'} size={15} mono={true} /> {lab.asLib ? t('حفظ المكتبة') : t('حفظ وتشغيل')}
+    </button>
+    <button class="btn ghost" onclick={() => stop('all')}><Icon name="stop" size={15} /> {t('إيقاف الكل')}</button>
+    <button class="btn ghost" onclick={() => go('panels')}><Icon name="layout" size={15} /> {t('اللوحات')}</button>
   </div>
 </div>
 
 <div class="glass">
-  <h3 style="margin:0 0 10px">📁 {t('السكريبتات المحفوظة')}</h3>
+  <h3 style="margin:0 0 10px"><Icon name="folder" size={16} /> {t('السكريبتات المحفوظة')}</h3>
   {#if !rows.length}
     <div style="color:var(--muted);font-size:13px">{t('لا توجد سكريبتات محفوظة بعد. «حفظ وتشغيل» يخزّن الملف على الجهاز.')}</div>
   {/if}
   {#each rows as f (f.name)}
     <div style="padding:8px 0;border-bottom:1px solid var(--border)">
       <div class="row" style="justify-content:space-between;gap:6px">
-        <span style="font-size:13px;min-width:0;word-break:break-all">
-          {f.run ? (f.run.state === 'running' ? '🟢' : '🔴') : '⚪'} <b>{f.name}</b>
-          <span style="color:var(--muted)">
-            {#if f.size}· {f.size}B{/if}
-            {#if f.run}· {(f.run.mem / 1024).toFixed(1)}KB · {f.run.up}s{/if}
-            {#if f.page}· 🪟{/if}
+        <span class="row" style="font-size:13px;min-width:0;word-break:break-all;gap:7px">
+          <span class="status-dot" class:run={f.run?.state === 'running'} class:err={f.run && f.run.state !== 'running'}></span>
+          <b>{f.name}</b>
+          <span class="row" style="color:var(--muted);gap:6px">
+            {#if f.size}<span>· {f.size}B</span>{/if}
+            {#if f.run}<span>· {(f.run.mem / 1024).toFixed(1)}KB · {f.run.up}s</span>{/if}
+            {#if f.page}<span style="display:inline-flex;align-items:center" title={t('صفحة')}><Icon name="layout" size={13} /></span>{/if}
           </span>
         </span>
         <span class="row" style="gap:4px;flex-wrap:nowrap">
-          {#if f.run}<button class="btn ghost" title={t('إيقاف')} onclick={() => stop(f.name)}>⏹</button>
-          {:else}<button class="btn ghost" title={t('تشغيل')} onclick={() => start(f.name)}>▶</button>{/if}
-          {#if !f.unsaved}<button class="btn ghost" title={t('تعديل')} onclick={() => edit(f)}>✏️</button>
-          <button class="btn ghost" title={t('حذف')} onclick={() => del(f.name)}>🗑</button>{/if}
+          {#if f.run}<button class="btn ghost icon-btn" title={t('إيقاف')} onclick={() => stop(f.name)}><Icon name="stop" size={14} /></button>
+          {:else}<button class="btn ghost icon-btn" title={t('تشغيل')} onclick={() => start(f.name)}><Icon name="play" size={14} /></button>{/if}
+          {#if !f.unsaved}<button class="btn ghost icon-btn" title={t('تعديل')} onclick={() => edit(f)}><Icon name="edit" size={14} /></button>
+          <button class="btn ghost icon-btn" title={t('حذف')} onclick={() => del(f.name)}><Icon name="trash" size={14} /></button>{/if}
         </span>
       </div>
       {#if !f.unsaved}
@@ -195,13 +199,13 @@
           {t('تشغيل تلقائي عند إقلاع الجهاز')}
         </label>
       {/if}
-      {#if f.run?.err}<div style="color:#e55;font-size:12px;direction:ltr;text-align:left;margin-top:4px">{f.run.err}</div>{/if}
+      {#if f.run?.err}<div style="color:var(--danger);font-size:12px;direction:ltr;text-align:left;margin-top:4px">{f.run.err}</div>{/if}
     </div>
   {/each}
 </div>
 
 <div class="glass">
-  <h3 style="margin:0 0 10px">📦 {t('المكتبات')} <span style="font-size:12px;color:var(--muted)">/scripts/lib · require("name")</span></h3>
+  <h3 style="margin:0 0 10px"><Icon name="box" size={16} /> {t('المكتبات')} <span style="font-size:12px;color:var(--muted);font-weight:400">/scripts/lib · require("name")</span></h3>
   {#if !lab.libs.length}
     <div style="color:var(--muted);font-size:13px">{t('لا توجد مكتبات. فعّل «حفظ كمكتبة» واحفظ ملفًا ثم استعمله بـ require.')}</div>
   {/if}
@@ -209,8 +213,8 @@
     <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:13px"><b>{l.name}</b> <span style="color:var(--muted)">· {l.size}B</span></span>
       <span class="row" style="gap:4px;flex-wrap:nowrap">
-        <button class="btn ghost" title={t('تعديل')} onclick={() => editLib(l)}>✏️</button>
-        <button class="btn ghost" title={t('حذف')} onclick={() => delLib(l.name)}>🗑</button>
+        <button class="btn ghost icon-btn" title={t('تعديل')} onclick={() => editLib(l)}><Icon name="edit" size={14} /></button>
+        <button class="btn ghost icon-btn" title={t('حذف')} onclick={() => delLib(l.name)}><Icon name="trash" size={14} /></button>
       </span>
     </div>
   {/each}
@@ -218,8 +222,8 @@
 
 <div class="glass">
   <div class="row" style="justify-content:space-between;margin-bottom:8px">
-    <h3 style="margin:0">🖥 {t('الطرفية')}</h3>
-    <button class="btn ghost" onclick={() => (lab.out = '')}>🧹 {t('تنظيف')}</button>
+    <h3 style="margin:0"><Icon name="terminal" size={16} /> {t('الطرفية')}</h3>
+    <button class="btn ghost sm" onclick={() => (lab.out = '')}><Icon name="eraser" size={14} /> {t('تنظيف')}</button>
   </div>
   <div class="term" bind:this={box} style="min-height:120px;max-height:220px">{lab.out}</div>
 </div>
