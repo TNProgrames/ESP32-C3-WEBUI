@@ -32,7 +32,7 @@
   async function run(file, type) {
     if (!file) return;
     const warn = type === 'fs'
-      ? t('تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. هل تريد المتابعة؟')
+      ? t('سيُستبدل قسم الواجهة (fs_c) فقط، وتبقى الإعدادات والسكريبتات والدرايفرات كما هي. هل تريد المتابعة؟')
       : t('سيُحدَّث البرنامج ثم يُعاد تشغيل الجهاز. هل تريد المتابعة؟');
     if (!confirm(warn)) return;
     busy = true; progress = 0; msg = ''; ok = true;
@@ -56,8 +56,8 @@
 </div>
 
 <div class="glass">
-  <h2><Icon name="layers" size={18} /> {t('تحديث الواجهة (littlefs)')}</h2>
-  <label for="fs">{t('الملف littlefs-*.bin')}</label>
+  <h2><Icon name="layers" size={18} /> {t('تحديث الواجهة (fs_c)')}</h2>
+  <label for="fs">{t('الملف fs_c-*.bin')}</label>
   <input id="fs" type="file" accept=".bin" onchange={(e) => (fsFile = e.currentTarget.files[0])} disabled={busy} />
   <p style="font-size:12px;color:var(--warning);margin-top:8px">{t('تحذير: هذا يمسح الإعدادات وكلمات المرور المحفوظة ويعيدها للافتراضي.')}</p>
   <div style="margin-top:14px">

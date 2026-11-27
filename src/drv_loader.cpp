@@ -1,6 +1,6 @@
 #include "drv_loader.h"
 #include "drv_pubkey.h"
-#include <LittleFS.h>
+#include "fs_router.h"
 #include "sha_util.h"
 #if !(defined(MBEDTLS_VERSION_MAJOR) && MBEDTLS_VERSION_MAJOR >= 4)
 #include <mbedtls/ecdsa.h>

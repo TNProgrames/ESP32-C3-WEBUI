@@ -77,9 +77,10 @@ jobs:
       - name: Build firmware
         run: pio run
 
-      - name: Build LittleFS image (only if data/ exists)
+      - name: Build LittleFS images (fs_c UI / fs_d config / fs_e data)
         run: |
-          if [ -d data ]; then pio run -t buildfs; fi
+          pio run -t buildfs >/dev/null 2>&1 || true   # فقط ليُنزّل PlatformIO أداة mklittlefs
+          python3 tools/fs_images.py fs_out
 
       - name: Package
         run: |
@@ -89,7 +90,7 @@ jobs:
 
           # 1) الفيرموير: ملفات الفلاش
           cp $B/firmware.bin $B/bootloader.bin $B/partitions.bin pkg/firmware/
-          [ -f $B/littlefs.bin ] && cp $B/littlefs.bin pkg/firmware/ || true
+          cp fs_out/fs_c.bin fs_out/fs_d.bin fs_out/fs_e.bin fs_out/flash.txt pkg/firmware/
           (cd pkg/firmware && zip -qr ../../release/firmware-$VER.zip .)
 
           # 2) الدرايفرات الموقّعة + الفهرس
@@ -118,6 +119,7 @@ jobs:
 
           # ملف .bin وحده للتحديث عن بُعد (OTA) من الواجهة
           cp $B/firmware.bin release/firmware-$VER.bin
+          cp fs_out/fs_c.bin release/fs_c-$VER.bin       # تحديث الواجهة عن بُعد (مساحة fs_c فقط)
           ls -l release
 
           # وضع الملفات مباشرةً داخل art/ (الفيرموير + باقي المجلدات بدون أرشيفات مدمجة)

@@ -101,7 +101,7 @@ export const en = {
   'الملف ليس JSON صالحًا': 'The file is not valid JSON', 'فشلت الاستعادة (تحقق من الملف)': 'Restore failed (check the file)',
   // Ota
   'تحديث البرنامج (firmware)': 'Firmware update', 'الملف firmware-*.bin': 'File firmware-*.bin',
-  'تحديث الواجهة (littlefs)': 'Web UI update (littlefs)', 'الملف littlefs-*.bin': 'File littlefs-*.bin',
+  'تحديث الواجهة (fs_c)': 'Web UI update (fs_c)', 'الملف fs_c-*.bin': 'File fs_c-*.bin', 'سيُستبدل قسم الواجهة (fs_c) فقط، وتبقى الإعدادات والسكريبتات والدرايفرات كما هي. هل تريد المتابعة؟': 'Only the UI partition (fs_c) is replaced; settings, scripts and drivers stay. Continue?',
   'رفع وتحديث': 'Upload & update',
   'تحذير: هذا يمسح الإعدادات وكلمات المرور المحفوظة ويعيدها للافتراضي.': 'Warning: this wipes the saved settings and passwords and restores the defaults.',
   'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. هل تريد المتابعة؟': 'Updating the UI replaces the whole filesystem and wipes settings and passwords. Continue?',

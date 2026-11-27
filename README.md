@@ -94,6 +94,10 @@ docs/            # التوثيق
 
 13 درايفرًا (`lcd1602 ssd1306 bme280 st7789 aht20 bh1750 ds3231 ads1115 sht31 ina219 pcf8574 pca9685 mpu6050`) و18 تطبيقًا (بعضها بدرايفر وصفحة، وبعضها Lua فقط). لإضافة جديد: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). البناء: `python3 tools/drv/build_index.py --version 1.0`، والاختبار: `python3 tools/drv/test_drivers.py` و`node tools/drv/test_store.mjs`.
 
+## تقسيم الفلاش
+
+LittleFS مقسّم إلى ثلاث مساحات: `fs_c` الواجهة (128KB)، `fs_d` الإعدادات (64KB)، `fs_e` السكريبتات والدرايفرات (448KB). التفاصيل والعناوين في [docs/PARTITIONS.md](docs/PARTITIONS.md). تحديث الواجهة عن بُعد يستهدف `fs_c` فقط.
+
 ## ملفات الإصدار (CI)
 
 الـ artifact `firmware` يضم `firmware-VER.zip` (ملفات الفيرموير) و`other-VER.zip` (`drivers/` و`apps/` و`tools/`). وإصدار GitHub (وسم `v*`) يضم zip منفصلًا للفيرموير والدرايفرات والتطبيقات والأدوات والمصدر، إضافة إلى `firmware-VER.bin`.

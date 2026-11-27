@@ -204,6 +204,7 @@
                     <div class="storage-meta">
                         <div class="bar"><div id="storage-bar"></div></div>
                         <span id="storage-txt" style="font-size:11px; color:var(--muted); font-family:monospace;"></span>
+                        <div id="parts" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; font-size:10px; font-family:monospace;"></div>
                     </div>
                 </div>
             </div>
@@ -444,6 +445,14 @@
             bar.style.background = pct > 90 ? 'var(--danger)' : pct > 75 ? 'var(--warning)' : 'var(--primary)';
             document.getElementById('storage-txt').innerText = `${(data.used / 1024).toFixed(1)} / ${(data.total / 1024).toFixed(1)} KB (${pct}%)`;
 
+            const pbox = document.getElementById('parts'); pbox.innerHTML = '';
+            (data.parts || []).forEach(p => {                       // المساحات الثلاث: C واجهة · D إعدادات · E بيانات
+                const pp = p.total ? Math.round(p.used / p.total * 100) : 0, chip = document.createElement('span');
+                chip.textContent = `${p.id.toUpperCase()} ${p.name} ${(p.used / 1024).toFixed(0)}/${(p.total / 1024).toFixed(0)}KB ${pp}%`;
+                chip.title = p.label;
+                chip.style.cssText = 'padding:2px 6px;border-radius:6px;border:1px solid var(--border);color:' + (pp > 90 ? 'var(--danger)' : 'var(--muted)') + (p.id === data.part ? ';border-color:var(--primary);color:var(--text)' : '');
+                pbox.appendChild(chip);
+            });
             const tbody = document.getElementById('file-list');
             tbody.innerHTML = '';
             updateBreadcrumbs();
@@ -490,6 +499,12 @@
             span.className = 'file-name';
             span.textContent = file.name;
             item.appendChild(span);
+            if (file.part && currentPath === "/") {                    // شارة المساحة في الجذر
+                const b = document.createElement('span');
+                b.textContent = file.part.toUpperCase();
+                b.style.cssText = 'margin-inline-start:8px;font-size:10px;padding:0 5px;border-radius:5px;border:1px solid var(--border);color:var(--muted)';
+                item.appendChild(b);
+            }
             item.onclick = () => file.isDir ? loadFiles(fullPath) : editFile(fullPath);
             tdName.appendChild(item);
 

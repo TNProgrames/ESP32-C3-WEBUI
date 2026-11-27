@@ -3,7 +3,8 @@
 #include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
+#include "fs_router.h"
+FsRouter gFs;
 #include <FS.h>
 #include <ArduinoJson.h>  // Use Version 7.x
 #include <Update.h>
@@ -253,8 +254,8 @@ char* RamUsage(char* buffer, size_t bufferSize) {
 }
 
 char* StorageUsage(char* buffer, size_t bufferSize) {
-    size_t total = LittleFS.totalBytes();
-    size_t used = LittleFS.usedBytes();
+    size_t total = LittleFS.totalAll();
+    size_t used = LittleFS.usedAll();
     if (total == 0) {
         snprintf(buffer, bufferSize, "0.0");
         return buffer;
@@ -622,7 +623,7 @@ static String runCommand(String line) {
   if (c == "version") return String("firmware ") + FW_VERSION + "\nchip " + ESP.getChipModel() + " rev " + String(ESP.getChipRevision()) + "\nsdk " + ESP.getSdkVersion();
   if (c == "uptime") return formatUptime(uptimeSec());
   if (c == "heap") return String("free ") + String(ESP.getFreeHeap()) + " / total " + String(ESP.getHeapSize()) + " / min free " + String(ESP.getMinFreeHeap());
-  if (c == "df") return String("used ") + String((unsigned long)LittleFS.usedBytes()) + " / total " + String((unsigned long)LittleFS.totalBytes());
+  if (c == "df") return String("fs_c ") + String((unsigned long)LittleFS.c.usedBytes()) + "/" + String((unsigned long)LittleFS.c.totalBytes()) + "  fs_d " + String((unsigned long)LittleFS.d.usedBytes()) + "/" + String((unsigned long)LittleFS.d.totalBytes()) + "  fs_e " + String((unsigned long)LittleFS.e.usedBytes()) + "/" + String((unsigned long)LittleFS.e.totalBytes());
   if (c == "echo") return arg;
   if (c == "reboot") { restartPending = true; return "Rebooting..."; }
   if (c == "wifi") {
@@ -735,22 +736,41 @@ void EmSetupAPI() {
         if (!isAuthorized(request) && !isAuthorizedEm(request)) { request->send(403); return; }
         String path = "/";
         if (request->hasParam("path") && !getPathParam(request, "path", path)) { request->send(400); return; }
-        File root = LittleFS.open(path);
-        if (!root || !root.isDirectory()) { if (root) root.close(); request->send(400); return; }
         JsonDocument doc;
-        doc["total"] = LittleFS.totalBytes();
-        doc["used"] = LittleFS.usedBytes();
-        JsonArray files = doc["files"].to<JsonArray>();
-        File file = root.openNextFile();
-        while (file) {
-            JsonObject f = files.add<JsonObject>();
-            f["name"] = String(file.name());
-            f["isDir"] = file.isDirectory();
-            f["size"] = file.size();
-            file.close();
-            file = root.openNextFile();
+        const char* PID[3] = { "c", "d", "e" };
+        JsonArray parts = doc["parts"].to<JsonArray>();      // أحجام المساحات الثلاث واستعمالها
+        for (int i = 0; i < 3; i++) {
+            JsonObject o = parts.add<JsonObject>();
+            o["id"] = PID[i]; o["label"] = FsRouter::LABEL[i]; o["name"] = FsRouter::NAME[i];
+            o["total"] = LittleFS.part(i).totalBytes(); o["used"] = LittleFS.part(i).usedBytes();
         }
-        root.close();
+        JsonArray files = doc["files"].to<JsonArray>();
+        auto addDir = [&](fs::LittleFSFS& fsx, const String& dir, int pi) -> bool {
+            File root = fsx.open(dir);
+            if (!root || !root.isDirectory()) { if (root) root.close(); return false; }
+            File file = root.openNextFile();
+            while (file) {
+                JsonObject f = files.add<JsonObject>();
+                f["name"] = String(file.name());
+                f["isDir"] = file.isDirectory();
+                f["size"] = file.size();
+                f["part"] = PID[pi];
+                file.close();
+                file = root.openNextFile();
+            }
+            root.close();
+            return true;
+        };
+        if (path == "/") {                                    // الجذر = اتحاد المساحات الثلاث
+            for (int i = 0; i < 3; i++) addDir(LittleFS.part(i), "/", i);
+        } else {
+            int pi = FsRouter::partOf(path);
+            if (!addDir(LittleFS.part(pi), path, pi)) { request->send(400); return; }
+        }
+        int cur = path == "/" ? -1 : FsRouter::partOf(path);
+        doc["part"] = cur < 0 ? "" : PID[cur];
+        doc["total"] = cur < 0 ? LittleFS.totalAll() : LittleFS.part(cur).totalBytes();
+        doc["used"] = cur < 0 ? LittleFS.usedAll() : LittleFS.part(cur).usedBytes();
         String output; serializeJson(doc, output);
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
@@ -864,7 +884,9 @@ void EmSetupAPI() {
         bool ok = false;
         {
           CfgLock _lk;
-          ok = LittleFS.format();
+          String pt = request->hasParam("part") ? request->getParam("part")->value() : "all";
+          if (pt == "c" || pt == "d" || pt == "e") ok = LittleFS.format(pt[0] - 'c');
+          else ok = LittleFS.format();
           if (ok) seedDefaultFiles();
         }
         if (ok) {
@@ -892,7 +914,7 @@ static bool validUiPage(const String& p) {
 
 void setupServerWeb() {
   // التزام سياسة نفس المصدر (same-origin) بدلاً من السماح لأي نطاق خارجي بالوصول للواجهات المحمية
-  server.serveStatic("/", LittleFS, "/app").setDefaultFile("index.html");
+  server.serveStatic("/", LittleFS.c, "/app").setDefaultFile("index.html");
 
   // --- Login API ---
   server.on("/login", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
@@ -1167,7 +1189,7 @@ void setupServerWeb() {
     ota->active = false;
     if (active) {
       if (started) Update.abort();
-      if (unmounted && (err[0] || !finished)) LittleFS.begin(false);
+      if (unmounted && (err[0] || !finished)) LittleFS.beginC();
       portENTER_CRITICAL(&otaMux);
       otaBusy = false;
       portEXIT_CRITICAL(&otaMux);
@@ -1198,15 +1220,15 @@ void setupServerWeb() {
         if (!ota->active) return;
         ota->active = false;
         if (ota->started) Update.abort();
-        if (ota->fsUnmounted) LittleFS.begin(false);
+        if (ota->fsUnmounted) LittleFS.beginC();
         portENTER_CRITICAL(&otaMux);
         otaBusy = false;
         portEXIT_CRITICAL(&otaMux);
       });
       ota->fs = request->hasParam("type") && request->getParam("type")->value() == "fs";
       if (!ota->fs && len > 0 && data[0] != 0xE9) { strlcpy(ota->err, "not a firmware image", sizeof(ota->err)); return; }
-      if (ota->fs) { luaeng_stop_all(); delay(50); LittleFS.end(); ota->fsUnmounted = true; }
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN, ota->fs ? U_SPIFFS : U_FLASH)) {
+      if (ota->fs) { luaeng_stop_all(); delay(50); LittleFS.endC(); ota->fsUnmounted = true; }
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, ota->fs ? U_SPIFFS : U_FLASH, -1, LOW, ota->fs ? FsRouter::LABEL[0] : nullptr)) {
         strlcpy(ota->err, Update.errorString(), sizeof(ota->err));
         return;
       }
