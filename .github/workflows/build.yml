@@ -79,7 +79,8 @@ jobs:
 
       - name: Build LittleFS images (fs_c UI / fs_d config / fs_e data)
         run: |
-          pio run -t buildfs >/dev/null 2>&1 || true   # فقط ليُنزّل PlatformIO أداة mklittlefs
+          pio pkg install -g --tool "platformio/tool-mklittlefs" || pio run -t buildfs || true   # تنزيل أداة mklittlefs
+          find ~/.platformio .pio -iname 'mklittlefs*' 2>/dev/null | head -5
           python3 tools/fs_images.py fs_out
 
       - name: Package

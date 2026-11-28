@@ -7,7 +7,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'fs_out')
 os.makedirs(out, exist_ok=True)
 
-cands = glob.glob(os.path.expanduser('~/.platformio/packages/tool-mklittlefs*/mklittlefs*')) + [shutil.which('mklittlefs') or '']
+cands = (glob.glob(os.path.expanduser('~/.platformio/**/mklittlefs*'), recursive=True)
+         + glob.glob(os.path.join(ROOT, '.pio', '**', 'mklittlefs*'), recursive=True) + [shutil.which('mklittlefs') or ''])
+cands = [c for c in cands if not c.endswith(('.json', '.md', '.txt'))]
 tool = next((c for c in cands if c and os.path.isfile(c) and os.access(c, os.X_OK)), None)
 if not tool:
     sys.exit('mklittlefs not found')
