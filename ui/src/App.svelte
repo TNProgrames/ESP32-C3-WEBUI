@@ -9,6 +9,7 @@
   import Backup from './lib/Backup.svelte';
   import Terminal from './lib/Terminal.svelte';
   import Ota from './lib/Ota.svelte';
+  import Files from './lib/Files.svelte';
   import Lab from './lib/Lab.svelte';
   import Drivers from './lib/Drivers.svelte';
   import Panels from './lib/Panels.svelte';
@@ -24,6 +25,7 @@
     { id: 'comm', icon: 'link', label: 'الاتصال', admin: true },
     { id: 'pass', icon: 'key', label: 'كلمات المرور', admin: true },
     { id: 'backup', icon: 'save', label: 'نسخ احتياطي', admin: true },
+    { id: 'files', icon: 'folder', label: 'الملفات', admin: true },
     { id: 'term', icon: 'terminal', label: 'الطرفية', admin: true },
     { id: 'lab', icon: 'flask', label: 'مختبر Lua', admin: true },
     { id: 'drivers', icon: 'store', label: 'متجر التطبيقات', admin: true },
@@ -63,6 +65,7 @@
     {:else if tab === 'comm'}<Comm />
     {:else if tab === 'pass'}<Passwords />
     {:else if tab === 'backup'}<Backup />
+    {:else if tab === 'files'}<Files />
     {:else if tab === 'term'}<Terminal />
     {:else if tab === 'lab'}<Lab go={(id) => (tab = id)} />
     {:else if tab === 'drivers'}<Drivers go={(id) => (tab = id)} />

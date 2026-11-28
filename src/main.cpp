@@ -835,7 +835,7 @@ void EmSetupAPI() {
         bool ok = f && !f.isDirectory();
         if (f) f.close();
         if (!ok) { request->send(400); return; }
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), path, "text/plain");
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), LittleFS.inner(path), "text/plain");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         request->send(response);
     });

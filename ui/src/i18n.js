@@ -26,6 +26,7 @@ export const en = {
   'اختبار': 'Test', 'معامل': 'Argument', 'اختياري': 'optional', 'فتح في المختبر': 'Open in Lab',
   // Lab
   'مختبر Lua': 'Lua Lab',
+  'الملفات': 'Files', 'الأقراص': 'Drives', 'اسم الملف:': 'File name:', 'اسم المجلد:': 'Folder name:', 'الاسم الجديد:': 'New name:', 'ملف': 'File', 'مجلد': 'Folder', 'رفع': 'Upload', 'لصق': 'Paste', 'نسخ': 'Copy', 'قصّ': 'Cut', 'نسخة': 'copy', 'لا يمكن النسخ داخل نفسه': 'Cannot copy into itself', 'تنزيل': 'Download', 'حذف': 'Delete', 'إعادة تسمية': 'Rename', 'حفظ': 'Save', 'إغلاق': 'Close', 'تم الحفظ': 'Saved', 'تغييرات غير محفوظة. إغلاق؟': 'Unsaved changes. Close?', 'المجلد فارغ': 'Folder is empty', 'الواجهة': 'UI', 'الإعدادات': 'Config', 'البيانات': 'Data', 'حر من': 'free of', 'افتح قرصًا (C: D: E:) أولًا': 'Open a drive (C: D: E:) first', 'تعذّر': 'Failed',
   'اكتب سكريبت Lua وشغّله على الجهاز مباشرة. المتاح: gpio, adc, pwm, timer, sys, ui, print.': 'Write a Lua script and run it on the device. Available: gpio, adc, pwm, timer, sys, ui, print.',
   'اللوحات': 'Panels', 'لا توجد لوحات الآن': 'No panels right now',
   'اللوحات التي تنشئها السكريبتات بـ ui.panel(...). شغّل مثالًا من تبويب المختبر لتظهر هنا.': 'Panels created by scripts with ui.panel(...). Run an example from the Lab tab to see them here.',
