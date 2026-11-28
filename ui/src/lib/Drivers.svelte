@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { api, apiRaw, authHeaders } from '../api.js';
-  import { DEFAULT_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, appDrivers, DRV_MAX, getMode, setMode } from '../drvstore.js';
+  import { DEFAULT_INDEX, LOCAL_INDEX, fetchStore, compare, installToDevice, removeFromDevice, installFromStore, installApp, appDrivers, DRV_MAX, getMode, setMode } from '../drvstore.js';
   import { t } from '../store.svelte.js';
   import AppCards from './AppCards.svelte';
   import { lab } from '../lab.svelte.js';
@@ -14,7 +14,10 @@
   let msg = $state('');
   let busy = $state(false);
   let file = $state(null);
-  let storeUrl = $state(localStorage.getItem(STORE_KEY) || DEFAULT_INDEX);
+  // رابط قديم محفوظ يشير إلى الجهاز نفسه (لا يحمل الفهرس) يُستبدل بـ GitHub
+  const saved = localStorage.getItem(STORE_KEY);
+  let storeUrl = $state(!saved || saved === LOCAL_INDEX ? DEFAULT_INDEX : saved);
+  let baseUrl = $state('');         // المكان الفعلي للفهرس بعد الجلب (قد يكون الجهاز عند الاحتياط)
   let store = $state([]);           // درايفرات المتجر
   let apps = $state([]);            // تطبيقات المتجر (سكريبت Lua + درايفره)
   let myScripts = $state([]);       // أسماء السكريبتات على الجهاز
@@ -57,7 +60,8 @@
     try {
       localStorage.setItem(STORE_KEY, storeUrl);
       const r = await fetchStore(storeUrl);
-      store = r.drivers; apps = r.apps;
+      store = r.drivers; apps = r.apps; baseUrl = r.base;
+      if (r.offline) storeMsg = t('تعذر الوصول للإنترنت: عُرضت النسخة المحلية من الجهاز');
       if (!store.length && !apps.length) storeMsg = t('الفهرس فارغ');
     } catch (e) { storeMsg = t('تعذر جلب الفهرس (يلزم اتصال بالإنترنت)') + ': ' + (e.message || ''); }
   }
@@ -89,7 +93,7 @@
   async function doInstall(a) {
     busyApp = a.name; msg = '';
     try {
-      const r = await installApp(a, store, list, storeUrl);
+      const r = await installApp(a, store, list, baseUrl || storeUrl);
       msg = r.ok ? t('تم تثبيت التطبيق') : t('تعذر التثبيت') + ': ' + r.error;
     } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
     busyApp = ''; refresh(); loadScripts();
@@ -140,7 +144,7 @@
   async function fromStore(d) {
     busy = true; msg = '';
     try {
-      const r = await installFromStore(d, storeUrl);
+      const r = await installFromStore(d, baseUrl || storeUrl);
       msg = r.ok ? t('تم التثبيت') : t('تعذر التثبيت') + ': ' + r.error;
     } catch (e) { msg = t('تعذر التنزيل') + ': ' + (e.message || ''); }
     busy = false; refresh();

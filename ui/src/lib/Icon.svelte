@@ -226,5 +226,63 @@
     <circle cx="15.8" cy="7.5" r="3.2" fill={mono ? 'currentColor' : '#fbbf24'} />
     <path d="M7 16.5h9.5a3.5 3.5 0 0 0 .5-7A5 5 0 0 0 7.4 8.8 3.8 3.8 0 0 0 7 16.5Z" fill={mono ? 'currentColor' : '#38bdf8'} />
     <path d="M9 19l-1 2.5M13 19l-1 2.5M17 19l-1 2.5" stroke={mono ? 'currentColor' : '#0ea5e9'} stroke-width="2" stroke-linecap="round" />
+  {:else if name === 'file'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#94a3b8'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#cbd5e1'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M8.5 12.5h7M8.5 16h7" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-text'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#64748b'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#cbd5e1'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M8.5 11h7M8.5 14h7M8.5 17h4" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-code'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#8b5cf6'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#c4b5fd'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M10.5 12l-2.3 2.5 2.3 2.5M13.5 12l2.3 2.5-2.3 2.5" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-lua'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#3b82f6'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#93c5fd'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M9 11.5v5h3M14.5 11.5v3.2a1.6 1.6 0 0 0 3.2 0v-3.2" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-html'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#f97316'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#fdba74'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M10 12l-2 2.5 2 2.5M14 12l2 2.5-2 2.5" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-json'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#f59e0b'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#fcd34d'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M10.5 11.5c-1.4 0-1.4 1-1.4 2s-.6 1.2-1 1.2c.4 0 1 .2 1 1.2s0 2 1.4 2M13.5 11.5c1.4 0 1.4 1 1.4 2s.6 1.2 1 1.2c-.4 0-1 .2-1 1.2s0 2-1.4 2" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-bin'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#14b8a6'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#5eead4'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M9 12.5h1.5v4H9M13.5 12.5h2v4h-2z" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'file-plus'}
+    <path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H14l5 5v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20.5v-17Z" fill={mono ? 'currentColor' : '#10b981'} />
+    <path d="M14 2l5 5h-3.5A1.5 1.5 0 0 1 14 5.5V2Z" fill={mono ? 'currentColor' : '#6ee7b7'} fill-opacity={mono ? '0.6' : '1'} />
+    <path d="M12 11v6M9 14h6" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'folder-plus'}
+    <path d="M2.5 6a2.2 2.2 0 0 1 2.2-2.2h4.6l2 2.4h8a2.2 2.2 0 0 1 2.2 2.2V18a2.2 2.2 0 0 1-2.2 2.2H4.7A2.2 2.2 0 0 1 2.5 18V6Z" fill={mono ? 'currentColor' : '#f59e0b'} />
+    <rect x="2.5" y="8" width="19" height="12.2" rx="2.2" fill={mono ? 'currentColor' : '#fbbf24'} />
+    <path d="M12 11.5v6M9 14.5h6" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'copy'}
+    <rect x="8.5" y="8.5" width="12" height="12" rx="2.5" fill={mono ? 'currentColor' : '#60a5fa'} />
+    <path d="M15.5 6.5v-1a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1" stroke={mono ? 'currentColor' : '#3b82f6'} stroke-width="2.2" stroke-linecap="round" fill="none" />
+  {:else if name === 'scissors'}
+    <circle cx="6.5" cy="6.5" r="3" stroke={mono ? 'currentColor' : '#f43f5e'} stroke-width="2.3" fill="none" />
+    <circle cx="6.5" cy="17.5" r="3" stroke={mono ? 'currentColor' : '#f43f5e'} stroke-width="2.3" fill="none" />
+    <path d="M8.7 8.7 20 19M8.7 15.3 20 5" stroke={mono ? 'currentColor' : '#94a3b8'} stroke-width="2.4" stroke-linecap="round" />
+  {:else if name === 'clipboard'}
+    <rect x="4.5" y="4.5" width="15" height="17" rx="2.5" fill={mono ? 'currentColor' : '#a78bfa'} />
+    <rect x="8.5" y="2.5" width="7" height="4.5" rx="1.5" fill={mono ? 'currentColor' : '#7c3aed'} />
+    <path d="M8.5 12h7M8.5 16h5" fill="none" stroke={mono ? 'var(--bg, #fff)' : '#fff'} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'drive'}
+    <rect x="2.5" y="6.5" width="19" height="11" rx="3" fill={mono ? 'currentColor' : '#64748b'} />
+    <rect x="2.5" y="12" width="19" height="5.5" rx="2.5" fill={mono ? 'currentColor' : '#475569'} />
+    <circle cx="17.5" cy="14.8" r="1.3" fill={mono ? 'currentColor' : '#34d399'} />
+  {:else if name === 'x'}
+    <path d="M6 6l12 12M18 6 6 18" stroke={mono ? 'currentColor' : '#ef4444'} stroke-width="2.8" stroke-linecap="round" />
+  {:else if name === 'wrap'}
+    <path d="M3.5 6.5h17M3.5 12h13.5a3 3 0 0 1 0 6H13" stroke={mono ? 'currentColor' : '#38bdf8'} stroke-width="2.4" stroke-linecap="round" fill="none" />
+    <path d="m14.5 15.5-2.5 2.5 2.5 2.5" stroke={mono ? 'currentColor' : '#6366f1'} stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  {:else if name === 'arrow-down'}
+    <path d="M12 4v14M6 12.5l6 6 6-6" stroke={mono ? 'currentColor' : '#38bdf8'} stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
   {/if}
 </svg>

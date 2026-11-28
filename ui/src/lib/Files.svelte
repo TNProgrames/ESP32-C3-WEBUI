@@ -2,6 +2,7 @@
   import { authHeaders } from '../api.js';
   import { t } from '../store.svelte.js';
   import Icon from './Icon.svelte';
+  import CodeEditor from './CodeEditor.svelte';
 
   // متصفح ملفات متكامل: يستعمل واجهات /api/* نفسها التي تستعملها صفحة الطوارئ (em)
   // المسارات: /c/... و/d/... و/e/... (أقراص C: D: E:)
@@ -14,6 +15,12 @@
   let clip = $state(null);                 // { path, name, isDir, cut }
   let ed = $state(null);                   // { path, text, dirty }
   let up;
+
+  const EXT = { lua: 'lua', html: 'html', htm: 'html', svg: 'html', xml: 'html', js: 'js', mjs: 'js', ts: 'js', json: 'json', css: 'css', c: 'c', h: 'c', cpp: 'c', hpp: 'c', ino: 'c' };
+  const ext = (n) => (n.includes('.') ? n.split('.').pop().toLowerCase() : '');
+  const langOf = (n) => EXT[ext(n)] || 'plain';
+  const ICON = { lua: 'file-lua', html: 'file-html', htm: 'file-html', svg: 'file-html', json: 'file-json', js: 'file-code', css: 'file-code', c: 'file-code', h: 'file-code', cpp: 'file-code', py: 'file-code', txt: 'file-text', md: 'file-text', log: 'file-text', csv: 'file-text', drv: 'file-bin', bin: 'file-bin', gz: 'file-bin' };
+  const iconOf = (f) => (f.isDir ? 'folder' : ICON[ext(f.name)] || 'file');
 
   const q = (s) => encodeURIComponent(s);
   const join = (a, b) => (a === '/' ? '' : a) + '/' + b;
@@ -42,7 +49,7 @@
   }
   function needDrive() { if (path === '/') { msg = t('افتح قرصًا (C: D: E:) أولًا'); return true; } return false; }
 
-  const newFile = () => { if (needDrive()) return; const n = prompt(t('اسم الملف:')); if (n) ed = { path: join(path, n.trim()), text: '', dirty: true, isNew: true }; };
+  const newFile = () => { if (needDrive()) return; const n = prompt(t('اسم الملف:')); if (n) ed = { path: join(path, n.trim()), text: '', dirty: true, isNew: true, lang: langOf(n.trim()) }; };
   const newDir = () => { if (needDrive()) return; const n = prompt(t('اسم المجلد:')); if (n) act(() => call('/api/mkdir?path=' + q(join(path, n.trim())), { method: 'POST' })); };
   const del = (f) => { if (confirm(t('حذف') + ' ' + f.name + '؟')) act(() => call('/api/delete?path=' + q(join(path, f.name)), { method: 'DELETE' })); };
   const rename = (f) => {
@@ -64,7 +71,7 @@
   }
 
   async function edit(f) {
-    try { ed = { path: join(path, f.name), text: await (await call('/api/read?path=' + q(join(path, f.name)))).text(), dirty: false }; }
+    try { ed = { path: join(path, f.name), text: await (await call('/api/read?path=' + q(join(path, f.name)))).text(), dirty: false, lang: langOf(f.name) }; }
     catch (e) { msg = t('تعذّر') + ': ' + e.message; }
   }
   async function save() {
@@ -75,11 +82,6 @@
     } catch (e) { msg = t('تعذّر') + ': ' + e.message; }
   }
   async function closeEd() { if (ed?.dirty && !confirm(t('تغييرات غير محفوظة. إغلاق؟'))) return; ed = null; await list(); }
-  function edKey(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
-    else if (e.key === 'Tab') { e.preventDefault(); const s = e.target.selectionStart; ed.text = ed.text.slice(0, s) + '  ' + ed.text.slice(e.target.selectionEnd); ed.dirty = true; queueMicrotask(() => (e.target.selectionStart = e.target.selectionEnd = s + 2)); }
-  }
-
   // نسخ/نقل: النقل داخل القرص نفسه rename، وبين الأقراص نسخ ثم حذف. نسخ المجلدات تكراري
   const copy = (f, cut) => { clip = { path: join(path, f.name), name: f.name, isDir: f.isDir, cut }; msg = (cut ? t('قصّ') : t('نسخ')) + ': ' + f.name; };
   async function cp(src, dst, isDir) {
@@ -112,20 +114,21 @@
 {#if ed}
   <div class="glass">
     <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:nowrap">
-      <b style="font-family:monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;direction:ltr">{ed.path}{ed.dirty ? ' •' : ''}</b>
+      <b style="font-family:monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;display:inline-flex;align-items:center;gap:6px"><Icon name={ICON[ext(ed.path)] || 'file'} size={16} /> {ed.path}{#if ed.dirty}<span style="width:8px;height:8px;border-radius:50%;background:var(--warning);flex:none"></span>{/if}</b>
       <div class="row" style="gap:6px;flex-wrap:nowrap">
         <button class="btn sm green" onclick={save}><Icon name="save" size={14} mono={true} /> {t('حفظ')}</button>
-        <button class="btn sm ghost" onclick={closeEd}>{t('إغلاق')}</button>
+        <button class="btn sm ghost" onclick={closeEd}><Icon name="x" size={14} /> {t('إغلاق')}</button>
       </div>
     </div>
-    <textarea class="term-input" style="width:100%;min-height:55vh;margin-top:8px;font-family:monospace;font-size:13px;direction:ltr;white-space:pre;tab-size:2"
-      bind:value={ed.text} oninput={() => (ed.dirty = true)} onkeydown={edKey} spellcheck="false" autocapitalize="off"></textarea>
+    <div style="margin-top:8px;height:68vh">
+      <CodeEditor bind:value={ed.text} bind:lang={ed.lang} toolbar fill onchange={() => (ed.dirty = true)} onsave={save} />
+    </div>
     {#if msg}<div style="font-size:12px;color:var(--muted);margin-top:6px">{msg}</div>{/if}
   </div>
 {:else}
   <div class="glass">
     <div class="row" style="gap:4px;font-size:13px;margin-bottom:8px;direction:ltr;flex-wrap:wrap">
-      <button class="btn sm ghost" onclick={() => list('/')}>💽 {t('الأقراص')}</button>
+      <button class="btn sm ghost" onclick={() => list('/')}><Icon name="drive" size={14} /> {t('الأقراص')}</button>
       {#each crumbs as c, i}
         <span style="color:var(--muted)">/</span>
         <button class="btn sm ghost" onclick={() => list('/' + crumbs.slice(0, i + 1).join('/'))}>{i === 0 && DRV[c] ? c.toUpperCase() + ':' : c}</button>
@@ -133,11 +136,11 @@
     </div>
 
     <div class="row" style="gap:6px;margin-bottom:8px">
-      <button class="btn sm" onclick={newFile} disabled={busy}>📄 {t('ملف')}</button>
-      <button class="btn sm" onclick={newDir} disabled={busy}><Icon name="folder" size={14} mono={true} /> {t('مجلد')}</button>
+      <button class="btn sm" onclick={newFile} disabled={busy}><Icon name="file-plus" size={14} mono={true} /> {t('ملف')}</button>
+      <button class="btn sm" onclick={newDir} disabled={busy}><Icon name="folder-plus" size={14} mono={true} /> {t('مجلد')}</button>
       <button class="btn sm" onclick={() => up.click()} disabled={busy}><Icon name="upload" size={14} mono={true} /> {t('رفع')}</button>
-      <button class="btn sm ghost" onclick={paste} disabled={busy || !clip}>📋 {t('لصق')}{clip ? ' (' + clip.name + ')' : ''}</button>
-      <button class="btn sm ghost" onclick={() => list()} disabled={busy}>↻</button>
+      <button class="btn sm ghost" onclick={paste} disabled={busy || !clip}><Icon name="clipboard" size={14} mono={true} /> {t('لصق')}{clip ? ' (' + clip.name + ')' : ''}</button>
+      <button class="btn sm ghost" onclick={() => list()} disabled={busy}aria-label={t('تحديث')}><Icon name="refresh" size={14} mono={true} /></button>
       <input type="file" multiple bind:this={up} onchange={upload} style="display:none" />
     </div>
 
@@ -150,26 +153,26 @@
       {#each parts as p}
         {@const pp = p.total ? Math.round((p.used / p.total) * 100) : 0}
         <button class="btn ghost" style="display:block;width:100%;text-align:start;margin-bottom:6px" onclick={() => list('/' + p.id)}>
-          <b>💽 {p.id.toUpperCase()}: {t(DRV[p.id][0])}</b> <span style="color:var(--muted);font-size:11px">({p.label})</span>
+          <b style="display:inline-flex;align-items:center;gap:6px"><Icon name="drive" size={16} /> {p.id.toUpperCase()}: {t(DRV[p.id][0])}</b> <span style="color:var(--muted);font-size:11px">({p.label})</span>
           <div style="height:5px;background:var(--border);border-radius:3px;margin:5px 0"><div style="height:100%;width:{pp}%;background:{pp > 90 ? '#e55' : 'var(--primary)'}"></div></div>
           <span style="font-size:11px;color:var(--muted)">{((p.total - p.used) / 1024).toFixed(1)} KB {t('حر من')} {(p.total / 1024).toFixed(0)} KB</span>
         </button>
       {/each}
     {:else}
       {#if crumbs.length > 0}
-        <button class="btn sm ghost" style="margin-bottom:6px" onclick={() => list(parent(path))}>⬆ ..</button>
+        <button class="btn sm ghost" style="margin-bottom:6px" onclick={() => list(parent(path))}><Icon name="arrow-up" size={14} /> ..</button>
       {/if}
       {#each files as f (f.name)}
         <div class="row" style="gap:6px;padding:6px 0;border-top:1px solid var(--border);flex-wrap:nowrap;align-items:center">
-          <button class="btn ghost" style="flex:1;min-width:0;text-align:start;padding:6px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr"
+          <button class="btn ghost" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;text-align:start;padding:6px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr"
             onclick={() => (f.isDir ? list(join(path, f.name)) : edit(f))}>
-            {f.isDir ? '📁' : '📄'} {f.name}
+            <Icon name={iconOf(f)} size={17} /> {f.name}
             {#if !f.isDir}<span style="color:var(--muted);font-size:11px"> · {f.size < 1024 ? f.size + ' B' : (f.size / 1024).toFixed(1) + ' KB'}</span>{/if}
           </button>
           <div class="row" style="gap:3px;flex-wrap:nowrap">
             {#if !f.isDir}<button class="btn sm ghost icon-btn" title={t('تنزيل')} onclick={() => download(f)}><Icon name="download" size={14} /></button>{/if}
-            <button class="btn sm ghost icon-btn" title={t('نسخ')} onclick={() => copy(f, false)}>⧉</button>
-            <button class="btn sm ghost icon-btn" title={t('قصّ')} onclick={() => copy(f, true)}>✂</button>
+            <button class="btn sm ghost icon-btn" title={t('نسخ')} onclick={() => copy(f, false)}><Icon name="copy" size={14} /></button>
+            <button class="btn sm ghost icon-btn" title={t('قصّ')} onclick={() => copy(f, true)}><Icon name="scissors" size={14} /></button>
             <button class="btn sm ghost icon-btn" title={t('إعادة تسمية')} onclick={() => rename(f)}><Icon name="edit" size={14} /></button>
             <button class="btn sm ghost icon-btn" title={t('حذف')} onclick={() => del(f)}><Icon name="trash" size={14} /></button>
           </div>
