@@ -761,11 +761,11 @@ void EmSetupAPI() {
             root.close();
             return true;
         };
-        if (path == "/") {                                    // الجذر = اتحاد المساحات الثلاث
-            for (int i = 0; i < 3; i++) addDir(LittleFS.part(i), "/", i);
+        if (path == "/") {                                    // الجذر = الأقراص C: D: E: (تُعرض في em)
+            doc["root"] = true;
         } else {
             int pi = FsRouter::partOf(path);
-            if (!addDir(LittleFS.part(pi), path, pi)) { request->send(400); return; }
+            if (!addDir(LittleFS.part(pi), FsRouter::inner(path), pi)) { request->send(400); return; }
         }
         int cur = path == "/" ? -1 : FsRouter::partOf(path);
         doc["part"] = cur < 0 ? "" : PID[cur];
@@ -810,7 +810,7 @@ void EmSetupAPI() {
         bool ok = f && !f.isDirectory();
         if (f) f.close();
         if (!ok) { request->send(400); return; }
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), path, "application/octet-stream");
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), LittleFS.inner(path), "application/octet-stream");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         request->send(response);
     });

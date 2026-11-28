@@ -226,7 +226,7 @@
                 <input type="file" id="ota-input" class="hidden" accept=".bin" onchange="otaFs()">
                 <button class="btn btn-amber" onclick="document.getElementById('ota-input').click()">
                     <svg class="ic" viewBox="0 0 24 24"><path d="M12 14.5 2.5 9.5 12 4.5l9.5 5-9.5 5Z" fill="#f59e0b"/><path d="m2.5 13.2 9.5 4.8 9.5-4.8" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="m2.5 16.8 9.5 4.7 9.5-4.7" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    <span data-t>تحديث الواجهة</span>
+                    <span data-t>تحديث الواجهة (fs_c)</span>
                 </button>
                 <button class="btn btn-red" onclick="formatFS()">
                     <svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4.5v2H3.5V5H8l1-2Z" fill="rgba(255,255,255,.85)"/><path d="M5.5 8h13l-1 11.5a2 2 0 0 1-2 1.8h-7a2 2 0 0 1-2-1.8L5.5 8Z" fill="currentColor"/></svg>
@@ -356,7 +356,10 @@
             'حفظ الملف': 'Save file', 'الرئيسية': 'Home', 'إلغاء': 'Cancel', 'موافق': 'Confirm',
             'اسم الملف:': 'File name:', 'اسم المجلد:': 'Folder name:', 'حذف نهائي؟': 'Delete permanently?',
             'الاسم/المسار الجديد:': 'New name/path:', 'تحذير: سيتم مسح الذاكرة بالكامل!': 'Warning: the whole filesystem will be erased!',
-            'تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟': 'Updating the UI replaces the whole filesystem and wipes settings and passwords. Continue?',
+            'سيُستبدل القرص C: (fs_c) فقط، وتبقى الإعدادات والسكريبتات. متابعة؟': 'Only drive C: (fs_c) is replaced; settings and scripts stay. Continue?',
+            'تنبيه: اسم الملف لا يحوي fs_c. ': 'Note: the file name does not contain fs_c. ', 'تحديث الواجهة (fs_c)': 'Update UI (fs_c)',
+            'الواجهة': 'UI', 'الإعدادات': 'Config', 'البيانات': 'Data', 'حر من': 'free of', 'افتح قرصًا (C: D: E:) أولًا': 'Open a drive (C: D: E:) first',
+            'اكتب القرص الذي تريد تهيئته: C أو D أو E (أو ALL للكل). سيُمسح بالكامل!': 'Type the drive to format: C, D or E (or ALL). It will be wiped!', 'اختيار غير صالح': 'Invalid choice',
             'تم التحديث، يُعاد تشغيل الجهاز...': 'Updated, the device is restarting...',
             'فشل التحديث: ': 'Update failed: ', 'انقطع الاتصال': 'Connection lost',
             'المجلد فارغ': 'Empty folder', 'تم الحفظ': 'Saved', 'تم الرفع': 'Uploaded',
@@ -433,6 +436,7 @@
             return res;
         }
 
+        const DRIVE_NAMES = { c: 'الواجهة', d: 'الإعدادات', e: 'البيانات' };
         async function loadFiles(path = "/") {
             currentPath = path;
             const res = await request(`/api/list?path=${encodeURIComponent(path)}`);
@@ -456,6 +460,28 @@
             const tbody = document.getElementById('file-list');
             tbody.innerHTML = '';
             updateBreadcrumbs();
+
+            if (data.root) {                                          // الجذر: الأقراص C: D: E: مثل ويندوز
+                const svgDrive = '<svg class="ic" style="width:22px;height:22px" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="2.2" fill="#64748b"/><rect x="4.5" y="9.5" width="15" height="5" rx="1.2" fill="#94a3b8"/><circle cx="17.5" cy="13" r="1" fill="#22c55e"/></svg>';
+                (data.parts || []).forEach(p => {
+                    const pp = p.total ? Math.round(p.used / p.total * 100) : 0;
+                    const row = document.createElement('tr'); row.className = 'file-row';
+                    const td = document.createElement('td'); td.colSpan = 3;
+                    const item = document.createElement('div'); item.className = 'file-item'; item.style.cssText = 'padding:8px 0;gap:12px';
+                    item.innerHTML = svgDrive;
+                    const info = document.createElement('div'); info.style.cssText = 'flex:1;min-width:0';
+                    const t1 = document.createElement('div'); t1.className = 'file-name'; t1.textContent = `${p.id.toUpperCase()}:  ${T(DRIVE_NAMES[p.id])}  (${p.label})`;
+                    const bw = document.createElement('div'); bw.className = 'bar'; bw.style.margin = '4px 0';
+                    const bi = document.createElement('div'); bi.style.cssText = `height:100%;width:${pp}%;background:${pp > 90 ? 'var(--danger)' : pp > 75 ? 'var(--warning)' : 'var(--primary)'}`;
+                    bw.appendChild(bi);
+                    const t2 = document.createElement('div'); t2.style.cssText = 'font-size:11px;color:var(--muted);font-family:monospace';
+                    t2.textContent = `${((p.total - p.used) / 1024).toFixed(1)} KB ${T('حر من')} ${(p.total / 1024).toFixed(0)} KB`;
+                    info.append(t1, bw, t2); item.appendChild(info);
+                    item.onclick = () => loadFiles('/' + p.id);
+                    td.appendChild(item); row.appendChild(td); tbody.appendChild(row);
+                });
+                return;
+            }
 
             if (path !== "/") {
                 const parent = path.substring(0, path.lastIndexOf('/')) || "/";
@@ -568,7 +594,7 @@
                 sep.textContent = '/';
                 const seg = document.createElement('span');
                 seg.className = 'crumb' + (idx === parts.length - 1 ? ' curr' : '');
-                seg.textContent = p;
+                seg.textContent = (idx === 0 && /^[cde]$/.test(p)) ? p.toUpperCase() + ':' : p;
                 seg.onclick = () => loadFiles(target);
                 bar.append(sep, seg);
             });
@@ -578,6 +604,7 @@
             const inp = document.getElementById('u-input');
             const file = inp.files[0];
             if (!file) return;
+            if (currentPath === '/') { notify(T('افتح قرصًا (C: D: E:) أولًا'), true); inp.value = ''; return; }
             const formData = new FormData();
             formData.append("file", file, (currentPath === "/" ? "" : currentPath) + "/" + file.name);
             const r = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -587,11 +614,13 @@
         }
 
         async function createNewFile() {
+            if (currentPath === '/') { notify(T('افتح قرصًا (C: D: E:) أولًا'), true); return; }
             const n = await askDialog({ title: T('ملف'), message: T('اسم الملف:'), inputVal: '' });
             if (n) openEditor((currentPath === "/" ? "" : currentPath) + "/" + n, "");
         }
 
         async function createNewDir() {
+            if (currentPath === '/') { notify(T('افتح قرصًا (C: D: E:) أولًا'), true); return; }
             const n = await askDialog({ title: T('مجلد'), message: T('اسم المجلد:'), inputVal: '' });
             if (n) {
                 const path = (currentPath === "/" ? "" : currentPath) + "/" + n;
@@ -636,8 +665,12 @@
         }
 
         async function formatFS() {
-            const ok = await askDialog({ title: T('تهيئة'), message: T('تحذير: سيتم مسح الذاكرة بالكامل!'), danger: true });
-            if (ok) { await request('/api/format', 'POST'); location.reload(); }
+            const cur = /^\/([cde])(\/|$)/.exec(currentPath);
+            const ans = await askDialog({ title: T('تهيئة'), message: T('اكتب القرص الذي تريد تهيئته: C أو D أو E (أو ALL للكل). سيُمسح بالكامل!'), inputVal: cur ? cur[1].toUpperCase() : 'E', danger: true });
+            if (!ans) return;
+            const a = String(ans).trim().toLowerCase();
+            if (!['c', 'd', 'e', 'all'].includes(a)) { notify(T('اختيار غير صالح'), true); return; }
+            await request('/api/format' + (a === 'all' ? '' : '?part=' + a), 'POST'); location.reload();
         }
 
         async function otaFs() {
@@ -646,7 +679,7 @@
             if (!f) return;
             const ok = await askDialog({
                 title: T('تحديث الواجهة'),
-                message: T('تحديث الواجهة يستبدل نظام الملفات بالكامل ويمسح الإعدادات وكلمات المرور. متابعة؟'),
+                message: (/fs_c/i.test(f.name) ? '' : T('تنبيه: اسم الملف لا يحوي fs_c. ')) + T('سيُستبدل القرص C: (fs_c) فقط، وتبقى الإعدادات والسكريبتات. متابعة؟'),
                 danger: true
             });
             if (!ok) { inp.value = ''; return; }
