@@ -6,7 +6,9 @@ import { authHeaders } from './api.js';
 
 export const DRV_MAX = 4;   // أقصى عدد درايفرات مثبّتة (DRV_MAX_LOADED في الفيرموير)
 export const REPO = 'TNProgrames/ESP32-C3-WEBUI';
-export const DEFAULT_INDEX = typeof location !== 'undefined' && location.origin
+// المصدر الافتراضي GitHub (الشريحة لا تحمل الفهرس). المصدر المحلي احتياطي عند انعدام الإنترنت: ملفات drivers/apps على الجهاز نفسه أو المحاكي.
+export const DEFAULT_INDEX = `https://raw.githubusercontent.com/${REPO}/main/drivers/apps/index.json`;
+export const LOCAL_INDEX = typeof location !== 'undefined' && location.origin
   ? new URL('/drivers/apps/index.json', location.origin).href
   : '/drivers/apps/index.json';
 
@@ -16,14 +18,32 @@ export async function listInstalled() {
   return r.json();
 }
 
-// يجلب الفهرس ويتحقق من شكله
-export async function fetchStore(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+async function timedFetch(url, ms = 8000) {
+  const ac = new AbortController(), id = setTimeout(() => ac.abort(), ms);
+  try { return await fetch(url, { cache: 'no-store', signal: ac.signal }); } finally { clearTimeout(id); }
+}
+async function loadIndex(url) {
+  const r = await timedFetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  const j = await r.json();
+  const ct = r.headers.get('content-type') || '';
+  const txt = await r.text();
+  let j; try { j = JSON.parse(txt); } catch { throw new Error(/html/i.test(ct) ? 'not an index (HTML)' : 'invalid JSON'); }
   if (j?.version !== 1 || !Array.isArray(j.drivers)) throw new Error('bad index format');
+  return j;
+}
+
+// يجلب الفهرس ويتحقق من شكله. عند فشل الرابط يجرّب نسخة الجهاز المحلية ويعيد base (مكان الفهرس المستعمل) لتنزيل الملفات منه.
+export async function fetchStore(url) {
+  let j, base = url, err;
+  try { j = await loadIndex(url); }
+  catch (e) {
+    err = e;
+    if (url !== LOCAL_INDEX) { try { j = await loadIndex(LOCAL_INDEX); base = LOCAL_INDEX; } catch {} }
+  }
+  if (!j) throw err;
   const okName = (x) => x && typeof x.name === 'string' && /^[A-Za-z0-9_]{1,24}$/.test(x.name) && typeof x.file === 'string';
   return {
+    base, offline: base !== url,
     drivers: j.drivers.filter(okName),
     apps: (Array.isArray(j.apps) ? j.apps : []).filter(okName),
   };
@@ -44,7 +64,7 @@ async function sha256Hex(buf) {
 
 // ينزّل ملف .drv ويفحص الحجم وsha256 (إن أمكن)
 export async function download(entry, indexUrl) {
-  const r = await fetch(new URL(entry.file, indexUrl).href, { cache: 'no-store' });
+  const r = await timedFetch(new URL(entry.file, indexUrl).href, 20000);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const buf = await r.arrayBuffer();
   if (entry.size && buf.byteLength !== entry.size) throw new Error('size mismatch');
@@ -83,7 +103,7 @@ async function save(path, content) {
   if (!r.ok) throw new Error('save ' + path + ' HTTP ' + r.status);
 }
 async function fetchText(indexUrl, file, sha) {
-  const r = await fetch(new URL(file, indexUrl).href, { cache: 'no-store' });
+  const r = await timedFetch(new URL(file, indexUrl).href, 20000);
   if (!r.ok) throw new Error(file + ' HTTP ' + r.status);
   const buf = await r.arrayBuffer();
   if (sha && globalThis.crypto?.subtle && (await sha256Hex(new Uint8Array(buf))) !== sha) throw new Error(file + ': sha256 mismatch');
