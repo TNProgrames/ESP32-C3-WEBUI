@@ -3,6 +3,7 @@ export const en = {
   // App
   'مدير': 'Admin', 'مستخدم': 'User', 'خروج': 'Logout',
   'الحالة': 'Status', 'الواي فاي': 'WiFi', 'الاتصال': 'Connection', 'كلمات المرور': 'Passwords',
+  'التفاف': 'Wrap', 'بحث...': 'Find...', 'سطر': 'lines', 'تعذر الوصول للإنترنت: عُرضت النسخة المحلية من الجهاز': 'No internet: showing the local copy from the device',
   'نسخ احتياطي': 'Backup', 'الطرفية': 'Terminal', 'تحديث': 'Update',
   // Drivers
   'درايفرات': 'Drivers',

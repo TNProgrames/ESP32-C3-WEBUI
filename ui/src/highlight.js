@@ -110,5 +110,9 @@ export function highlightHtml(src) {
 }
 
 export function highlight(src, lang) {
-  return lang === 'html' ? highlightHtml(src) : highlightLua(src);
+  if (lang === 'html') return highlightHtml(src);
+  if (lang === 'js' || lang === 'json' || lang === 'c' || lang === 'cpp') return highlightJs(src);
+  if (lang === 'css') return highlightCss(src);
+  if (lang === 'plain') return esc(src);
+  return highlightLua(src);
 }
