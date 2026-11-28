@@ -810,7 +810,7 @@ void EmSetupAPI() {
         bool ok = f && !f.isDirectory();
         if (f) f.close();
         if (!ok) { request->send(400); return; }
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "application/octet-stream");
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), path, "application/octet-stream");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         request->send(response);
     });
@@ -835,7 +835,7 @@ void EmSetupAPI() {
         bool ok = f && !f.isDirectory();
         if (f) f.close();
         if (!ok) { request->send(400); return; }
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "text/plain");
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS.of(path), path, "text/plain");
         if (isAuthorizedEm(request)) {refreshSessionEm(response);}
         request->send(response);
     });
