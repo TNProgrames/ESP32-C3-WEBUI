@@ -140,7 +140,7 @@
       <button class="btn sm" onclick={newDir} disabled={busy}><Icon name="folder-plus" size={14} mono={true} /> {t('مجلد')}</button>
       <button class="btn sm" onclick={() => up.click()} disabled={busy}><Icon name="upload" size={14} mono={true} /> {t('رفع')}</button>
       <button class="btn sm ghost" onclick={paste} disabled={busy || !clip}><Icon name="clipboard" size={14} mono={true} /> {t('لصق')}{clip ? ' (' + clip.name + ')' : ''}</button>
-      <button class="btn sm ghost" onclick={() => list()} disabled={busy}aria-label={t('تحديث')}><Icon name="refresh" size={14} mono={true} /></button>
+      <button class="btn sm ghost" onclick={() => list()} disabled={busy} aria-label={t('تحديث')}><Icon name="refresh" size={14} mono={true} /></button>
       <input type="file" multiple bind:this={up} onchange={upload} style="display:none" />
     </div>
 
